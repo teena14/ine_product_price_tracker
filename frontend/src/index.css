@@ -24,6 +24,8 @@
   --error-background: #fff1f1;
   --info: #14556d;
   --info-background: #edf8fb;
+  --success: #14613d;
+  --success-background: #edf9f1;
 }
 
 * {

@@ -142,6 +142,11 @@ button:disabled {
   color: var(--info);
 }
 
+.message.success {
+  background: var(--success-background);
+  color: var(--success);
+}
+
 .results-section,
 .selection-panel {
   margin-top: 24px;
@@ -297,6 +302,47 @@ button:disabled {
   flex: 0 0 auto;
 }
 
+.tracked-section {
+  margin-top: 40px;
+}
+
+.tracked-list {
+  display: grid;
+  gap: 10px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.tracked-card {
+  align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  padding: 16px;
+}
+
+.tracked-card h3 {
+  margin-bottom: 4px;
+}
+
+.tracked-card p {
+  color: var(--muted);
+}
+
+.pending-status {
+  background: var(--info-background);
+  border-radius: 999px;
+  color: var(--info);
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 5px 9px;
+  text-align: center;
+}
+
 .visually-hidden {
   height: 1px;
   margin: -1px;
@@ -330,6 +376,11 @@ button:disabled {
 
   .section-heading,
   .tracking-preview {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .tracked-card {
     align-items: flex-start;
     flex-direction: column;
   }

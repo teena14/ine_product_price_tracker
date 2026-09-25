@@ -4,6 +4,7 @@ import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import { sessionMiddleware } from './middleware/session.js';
 import productsRouter from './routes/products.js';
+import trackedProductsRouter from './routes/trackedProducts.js';
 
 const app = express();
 
@@ -38,8 +39,7 @@ app.get('/health', (_req, res) => {
 
 // --- API routes ---
 app.use('/api/products', productsRouter);
-
-// TODO (Phase 4): mount tracked-product routes
+app.use('/api/tracked-products', trackedProductsRouter);
 // TODO (Phase 9): mount internal scrape route
 
 // --- Centralized error handler (must be last middleware) ---

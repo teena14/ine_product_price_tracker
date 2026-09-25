@@ -165,6 +165,7 @@ The scraper is **never** triggered by `setInterval` or an in-process scheduler.
 | `POST /api/tracked-products` | Start tracking a product option |
 | `GET /api/tracked-products` | List all tracked products |
 | `GET /api/tracked-products/:id` | Get one tracked product |
+| `DELETE /api/tracked-products/:id` | Stop tracking a product |
 | `GET /api/tracked-products/:id/history` | Get scrape history |
 | `GET /api/tracked-products/:id/export` | Download history as CSV |
 

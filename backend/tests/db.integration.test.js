@@ -153,12 +153,10 @@ describeOrSkip('trackedProductsRepository', () => {
     expect(deactivated.active).toBe(false);
     createdId = null; // already deactivated
 
-    // listTrackedProductsBySession returns all rows (active + inactive) for the dashboard.
-    // The deactivated row should still be present but with active=false.
+    // The user-facing list shows only active products.
     const sessionList = await listTrackedProductsBySession(TEST_SESSION_A);
     const found = sessionList.find((p) => p.id === created.id);
-    expect(found).toBeDefined();
-    expect(found.active).toBe(false);
+    expect(found).toBeUndefined();
 
     // Confirm it's excluded from the scraper's active-only list
     const activeList = await listAllActiveTrackedProducts();

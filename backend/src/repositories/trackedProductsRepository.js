@@ -59,6 +59,7 @@ export async function listTrackedProductsBySession(sessionId) {
     .from('tracked_products')
     .select('*')
     .eq('session_id', sessionId)
+    .eq('active', true)
     .order('created_at', { ascending: false });
 
   if (error) {

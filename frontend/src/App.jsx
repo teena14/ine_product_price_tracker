@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { getProduct, searchProducts } from './api'
+import { useEffect, useState } from 'react'
+import { createTrackedProduct, getProduct, listTrackedProducts, searchProducts } from './api'
 import './App.css'
 
 function formatProductMeta(product) {
@@ -11,6 +11,25 @@ function App() {
   const [searchState, setSearchState] = useState({ status: 'idle', data: null, error: '' })
   const [detailState, setDetailState] = useState({ status: 'idle', data: null, error: '' })
   const [selectedOptionId, setSelectedOptionId] = useState('')
+  const [trackingState, setTrackingState] = useState({ status: 'idle', error: '' })
+  const [trackedProductsState, setTrackedProductsState] = useState({
+    status: 'loading',
+    products: [],
+    error: '',
+  })
+
+  useEffect(() => {
+    async function loadTrackedProducts() {
+      try {
+        const data = await listTrackedProducts()
+        setTrackedProductsState({ status: 'success', products: data.trackedProducts, error: '' })
+      } catch (error) {
+        setTrackedProductsState({ status: 'error', products: [], error: error.message })
+      }
+    }
+
+    loadTrackedProducts()
+  }, [])
 
   async function handleSearch(event) {
     event.preventDefault()
@@ -24,6 +43,7 @@ function App() {
     setSearchState({ status: 'loading', data: null, error: '' })
     setDetailState({ status: 'idle', data: null, error: '' })
     setSelectedOptionId('')
+    setTrackingState({ status: 'idle', error: '' })
 
     try {
       const data = await searchProducts(searchQuery)
@@ -36,12 +56,36 @@ function App() {
   async function handleSelectProduct(productId) {
     setDetailState({ status: 'loading', data: null, error: '' })
     setSelectedOptionId('')
+    setTrackingState({ status: 'idle', error: '' })
 
     try {
       const data = await getProduct(productId)
       setDetailState({ status: 'success', data, error: '' })
     } catch (error) {
       setDetailState({ status: 'error', data: null, error: error.message })
+    }
+  }
+
+  async function handleTrackOption() {
+    if (!selectedProduct || !selectedOption) {
+      return
+    }
+
+    setTrackingState({ status: 'loading', error: '' })
+
+    try {
+      const trackedProduct = await createTrackedProduct({
+        productId: selectedProduct.productId,
+        optionId: selectedOption.optionId,
+      })
+      setTrackedProductsState((current) => ({
+        status: 'success',
+        products: [trackedProduct, ...current.products],
+        error: '',
+      }))
+      setTrackingState({ status: 'success', error: '' })
+    } catch (error) {
+      setTrackingState({ status: 'error', error: error.message })
     }
   }
 
@@ -169,16 +213,57 @@ function App() {
               <h3>{selectedOption ? `${selectedProduct.name} — ${selectedOption.label}` : 'Choose an option to continue'}</h3>
               <p>
                 {selectedOption
-                  ? 'This selection is ready to be saved in the next phase.'
+                  ? 'Track this option to include it in your dashboard.'
                   : 'Each option can have its own price and stock level.'}
               </p>
             </div>
-            <button type="button" disabled title="Saving tracked products is added in the next phase.">
-              Track option
+            <button
+              type="button"
+              disabled={!selectedOption || trackingState.status === 'loading'}
+              onClick={handleTrackOption}
+            >
+              {trackingState.status === 'loading' ? 'Tracking…' : 'Track option'}
             </button>
           </div>
+          {trackingState.status === 'success' && (
+            <p className="message success" role="status">This product option is now being tracked.</p>
+          )}
+          {trackingState.status === 'error' && (
+            <p className="message error" role="alert">{trackingState.error}</p>
+          )}
         </section>
       )}
+
+      <section className="tracked-section" aria-labelledby="tracked-products-heading">
+        <div className="section-heading">
+          <div>
+            <h2 id="tracked-products-heading">Tracked products</h2>
+            <p>Only products saved in this browser’s anonymous session appear here.</p>
+          </div>
+        </div>
+
+        {trackedProductsState.status === 'loading' && <p className="message loading" role="status">Loading tracked products…</p>}
+        {trackedProductsState.status === 'error' && <p className="message error" role="alert">{trackedProductsState.error}</p>}
+        {trackedProductsState.status === 'success' && trackedProductsState.products.length === 0 && (
+          <div className="empty-state">
+            <h3>No products tracked yet</h3>
+            <p>Select a product option above to start tracking it.</p>
+          </div>
+        )}
+        {trackedProductsState.status === 'success' && trackedProductsState.products.length > 0 && (
+          <ul className="tracked-list">
+            {trackedProductsState.products.map((product) => (
+              <li key={product.id} className="tracked-card">
+                <div>
+                  <h3>{product.product_name}</h3>
+                  <p>{product.option_name}</p>
+                </div>
+                <span className="pending-status">Awaiting first scrape</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
     </main>
   )
 }

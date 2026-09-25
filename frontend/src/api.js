@@ -1,10 +1,13 @@
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001').replace(/\/$/, '')
 
-async function request(path) {
+async function request(path, options = {}) {
   let response
 
   try {
-    response = await fetch(`${API_BASE_URL}${path}`, { credentials: 'include' })
+    response = await fetch(`${API_BASE_URL}${path}`, {
+      credentials: 'include',
+      ...options,
+    })
   } catch {
     throw new Error('Could not reach the API. Check that the backend is running.')
   }
@@ -24,4 +27,16 @@ export function searchProducts(query) {
 
 export function getProduct(productId) {
   return request(`/api/products/${encodeURIComponent(productId)}`)
+}
+
+export function createTrackedProduct({ productId, optionId }) {
+  return request('/api/tracked-products', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ productId, optionId }),
+  })
+}
+
+export function listTrackedProducts() {
+  return request('/api/tracked-products')
 }
