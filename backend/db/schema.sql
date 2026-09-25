@@ -14,18 +14,22 @@ CREATE TABLE IF NOT EXISTS tracked_products (
   option_id       TEXT NOT NULL,
   option_name     TEXT NOT NULL,
   active          BOOLEAN NOT NULL DEFAULT TRUE,
+  session_id      TEXT NOT NULL,           -- anonymous browser session that owns this record
   created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Prevent duplicate active tracking of the same product+option combination.
--- A user can re-track the same product after deactivating it (active=false rows
--- are excluded from the index), but cannot have two simultaneous active entries.
+-- Prevent duplicate active tracking of the same product+option WITHIN THE SAME SESSION.
+-- Different sessions can track the same product+option independently.
 CREATE UNIQUE INDEX IF NOT EXISTS uq_tracked_products_active
-  ON tracked_products (product_id, option_id)
+  ON tracked_products (session_id, product_id, option_id)
   WHERE active = TRUE;
 
--- Index for listing active products (used by the scraper every 2 hours)
+-- Index for filtering tracked products by session (used on every user-facing query)
+CREATE INDEX IF NOT EXISTS idx_tracked_products_session_id
+  ON tracked_products (session_id);
+
+-- Index for listing active products (used by the scraper — scrapes ALL sessions)
 CREATE INDEX IF NOT EXISTS idx_tracked_products_active
   ON tracked_products (active)
   WHERE active = TRUE;

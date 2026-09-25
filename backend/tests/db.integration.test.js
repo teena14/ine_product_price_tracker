@@ -1,5 +1,5 @@
 /**
- * Phase 1 integration tests — Database repositories
+ * Phase 1 + session integration tests — Database repositories
  *
  * These tests run against the real Supabase database.
  * They are intentionally skipped in CI (no real DB credentials there).
@@ -11,9 +11,9 @@
 import 'dotenv/config';
 import {
   createTrackedProduct,
-  getTrackedProductById,
-  listActiveTrackedProducts,
-  listAllTrackedProducts,
+  getTrackedProductByIdAndSession,
+  listTrackedProductsBySession,
+  listAllActiveTrackedProducts,
   deactivateTrackedProduct,
 } from '../src/repositories/trackedProductsRepository.js';
 import {
@@ -33,12 +33,17 @@ const hasRealCreds =
 
 const describeOrSkip = hasRealCreds ? describe : describe.skip;
 
+// Fixed-format session IDs for deterministic testing
+const TEST_SESSION_A = 'a'.repeat(64);
+const TEST_SESSION_B = 'b'.repeat(64);
+
 const TEST_PRODUCT = {
   product_id: '__test_product_123__',
-  product_url: 'https://hire.ine.com/__test__',
+  product_url: 'https://demo.inelabteamdev.com/products/__test__',
   product_name: 'Test Product (Jest)',
   option_id: '__test_option_abc__',
   option_name: 'Test Option A',
+  session_id: TEST_SESSION_A,
 };
 
 describeOrSkip('trackedProductsRepository', () => {
@@ -48,7 +53,7 @@ describeOrSkip('trackedProductsRepository', () => {
     // Best-effort cleanup — deactivate any test rows
     if (createdId) {
       try {
-        await deactivateTrackedProduct(createdId);
+        await deactivateTrackedProduct(createdId, TEST_SESSION_A);
       } catch { // intentional: cleanup is best-effort
         // already cleaned up or didn't exist
       }
@@ -63,11 +68,12 @@ describeOrSkip('trackedProductsRepository', () => {
     expect(row.id).toBeDefined();
     expect(row.product_id).toBe(TEST_PRODUCT.product_id);
     expect(row.option_id).toBe(TEST_PRODUCT.option_id);
+    expect(row.session_id).toBe(TEST_SESSION_A);
     expect(row.active).toBe(true);
     expect(row.created_at).toBeDefined();
   });
 
-  test('createTrackedProduct — throws DUPLICATE_TRACKING for same active product+option', async () => {
+  test('createTrackedProduct — throws DUPLICATE_TRACKING for same session+product+option', async () => {
     const row = await createTrackedProduct(TEST_PRODUCT);
     createdId = row.id;
 
@@ -76,49 +82,96 @@ describeOrSkip('trackedProductsRepository', () => {
     });
   });
 
-  test('getTrackedProductById — returns the correct row', async () => {
+  test('createTrackedProduct — different sessions CAN track same product+option', async () => {
+    const rowA = await createTrackedProduct({ ...TEST_PRODUCT, session_id: TEST_SESSION_A });
+    createdId = rowA.id;
+
+    // Session B tracks the same product — should succeed
+    const rowB = await createTrackedProduct({ ...TEST_PRODUCT, session_id: TEST_SESSION_B });
+    expect(rowB.id).toBeDefined();
+    expect(rowB.session_id).toBe(TEST_SESSION_B);
+
+    // Cleanup rowB
+    await deactivateTrackedProduct(rowB.id, TEST_SESSION_B);
+  });
+
+  test('getTrackedProductByIdAndSession — returns the correct row for the right session', async () => {
     const created = await createTrackedProduct(TEST_PRODUCT);
     createdId = created.id;
 
-    const fetched = await getTrackedProductById(created.id);
+    const fetched = await getTrackedProductByIdAndSession(created.id, TEST_SESSION_A);
     expect(fetched.id).toBe(created.id);
     expect(fetched.product_name).toBe(TEST_PRODUCT.product_name);
   });
 
-  test('getTrackedProductById — throws TRACKED_PRODUCT_NOT_FOUND for unknown id', async () => {
+  test('getTrackedProductByIdAndSession — throws TRACKED_PRODUCT_NOT_FOUND for wrong session (IDOR prevention)', async () => {
+    const created = await createTrackedProduct(TEST_PRODUCT);
+    createdId = created.id;
+
+    // Session B tries to access Session A's product — must fail
     await expect(
-      getTrackedProductById('00000000-0000-0000-0000-000000000000')
+      getTrackedProductByIdAndSession(created.id, TEST_SESSION_B)
     ).rejects.toMatchObject({ code: 'TRACKED_PRODUCT_NOT_FOUND' });
   });
 
-  test('listActiveTrackedProducts — includes newly created active product', async () => {
-    const created = await createTrackedProduct(TEST_PRODUCT);
-    createdId = created.id;
-
-    const list = await listActiveTrackedProducts();
-    expect(list.some((p) => p.id === created.id)).toBe(true);
+  test('getTrackedProductByIdAndSession — throws TRACKED_PRODUCT_NOT_FOUND for unknown id', async () => {
+    await expect(
+      getTrackedProductByIdAndSession('00000000-0000-0000-0000-000000000000', TEST_SESSION_A)
+    ).rejects.toMatchObject({ code: 'TRACKED_PRODUCT_NOT_FOUND' });
   });
 
-  test('deactivateTrackedProduct — sets active=false', async () => {
+  test('listTrackedProductsBySession — returns only the session\'s own products', async () => {
+    const rowA = await createTrackedProduct({ ...TEST_PRODUCT, session_id: TEST_SESSION_A });
+    createdId = rowA.id;
+
+    const rowB = await createTrackedProduct({ ...TEST_PRODUCT, session_id: TEST_SESSION_B });
+
+    const listA = await listTrackedProductsBySession(TEST_SESSION_A);
+    const listB = await listTrackedProductsBySession(TEST_SESSION_B);
+
+    expect(listA.some((p) => p.id === rowA.id)).toBe(true);
+    expect(listA.some((p) => p.id === rowB.id)).toBe(false); // session isolation
+    expect(listB.some((p) => p.id === rowB.id)).toBe(true);
+
+    // Cleanup rowB
+    await deactivateTrackedProduct(rowB.id, TEST_SESSION_B);
+  });
+
+  test('listAllActiveTrackedProducts — includes products from all sessions (for scraper)', async () => {
     const created = await createTrackedProduct(TEST_PRODUCT);
     createdId = created.id;
 
-    const deactivated = await deactivateTrackedProduct(created.id);
-    expect(deactivated.active).toBe(false);
+    const allActive = await listAllActiveTrackedProducts();
+    expect(allActive.some((p) => p.id === created.id)).toBe(true);
+  });
 
-    const activeList = await listActiveTrackedProducts();
+  test('deactivateTrackedProduct — sets active=false when session matches', async () => {
+    const created = await createTrackedProduct(TEST_PRODUCT);
+    createdId = created.id;
+
+    const deactivated = await deactivateTrackedProduct(created.id, TEST_SESSION_A);
+    expect(deactivated.active).toBe(false);
+    createdId = null; // already deactivated
+
+    // listTrackedProductsBySession returns all rows (active + inactive) for the dashboard.
+    // The deactivated row should still be present but with active=false.
+    const sessionList = await listTrackedProductsBySession(TEST_SESSION_A);
+    const found = sessionList.find((p) => p.id === created.id);
+    expect(found).toBeDefined();
+    expect(found.active).toBe(false);
+
+    // Confirm it's excluded from the scraper's active-only list
+    const activeList = await listAllActiveTrackedProducts();
     expect(activeList.some((p) => p.id === created.id)).toBe(false);
   });
 
-  test('listAllTrackedProducts — includes inactive products', async () => {
+  test('deactivateTrackedProduct — throws NOT_FOUND when wrong session tries to deactivate', async () => {
     const created = await createTrackedProduct(TEST_PRODUCT);
     createdId = created.id;
 
-    await deactivateTrackedProduct(created.id);
-    createdId = null; // already deactivated
-
-    const allList = await listAllTrackedProducts();
-    expect(allList.some((p) => p.id === created.id)).toBe(true);
+    await expect(
+      deactivateTrackedProduct(created.id, TEST_SESSION_B)
+    ).rejects.toMatchObject({ code: 'TRACKED_PRODUCT_NOT_FOUND' });
   });
 });
 
@@ -137,7 +190,7 @@ describeOrSkip('scrapeAttemptsRepository', () => {
   afterEach(async () => {
     if (trackedProductId) {
       try {
-        await deactivateTrackedProduct(trackedProductId);
+        await deactivateTrackedProduct(trackedProductId, TEST_SESSION_A);
       } catch { // intentional: cleanup is best-effort
         // ignore
       }
@@ -209,7 +262,6 @@ describeOrSkip('scrapeAttemptsRepository', () => {
 
     const history = await getScrapeHistory(trackedProductId);
     expect(history.length).toBe(2);
-    // Newest first — failed is more recent
     expect(history[0].outcome).toBe('failed');
     expect(history[1].outcome).toBe('success');
   });
@@ -227,7 +279,6 @@ describeOrSkip('scrapeAttemptsRepository', () => {
       duration_ms: 1000,
     });
 
-    // Small delay to ensure timestamp ordering
     await new Promise((r) => setTimeout(r, 50));
 
     await saveScrapeAttempt({
@@ -260,7 +311,6 @@ describeOrSkip('scrapeAttemptsRepository', () => {
       duration_ms: 2000,
     });
 
-    // A subsequent failure must NOT become the "last good" price
     await saveScrapeAttempt({
       tracked_product_id: trackedProductId,
       run_id: 'run-failure',

@@ -1,6 +1,9 @@
 import express from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
+import cookieParser from 'cookie-parser';
+import { sessionMiddleware } from './middleware/session.js';
+import productsRouter from './routes/products.js';
 
 const app = express();
 
@@ -11,18 +14,31 @@ app.use(
     origin: process.env.FRONTEND_URL || 'http://localhost:5173',
     methods: ['GET', 'POST', 'PATCH', 'DELETE'],
     allowedHeaders: ['Content-Type', 'Authorization'],
+    credentials: true, // required for cross-origin cookies
   })
 );
 
-// --- Body parsing ---
+// --- Body and cookie parsing ---
 app.use(express.json());
+app.use(cookieParser());
+
+// --- Anonymous session (applied to all routes except internal/scrape) ---
+// Internal scrape endpoint uses CRON_SECRET auth, not session cookies.
+app.use((req, res, next) => {
+  if (req.path.startsWith('/internal/')) {
+    return next();
+  }
+  return sessionMiddleware(req, res, next);
+});
 
 // --- Health check ---
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// TODO (Phase 2): mount product routes
+// --- API routes ---
+app.use('/api/products', productsRouter);
+
 // TODO (Phase 4): mount tracked-product routes
 // TODO (Phase 9): mount internal scrape route
 
