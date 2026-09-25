@@ -10,8 +10,8 @@
   "scripts": {
     "dev": "node --watch src/server.js",
     "start": "node src/server.js",
-    "test": "node --experimental-vm-modules node_modules/.bin/jest --runInBand",
-    "test:coverage": "node --experimental-vm-modules node_modules/.bin/jest --runInBand --coverage",
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js --runInBand",
+    "test:coverage": "node --experimental-vm-modules node_modules/jest/bin/jest.js --runInBand --coverage",
     "lint": "eslint \"src/**/*.js\" \"tests/**/*.js\" --no-error-on-unmatched-pattern",
     "lint:fix": "eslint \"src/**/*.js\" \"tests/**/*.js\" --fix --no-error-on-unmatched-pattern",
     "scrape:once": "node scripts/scrapeOnce.js"

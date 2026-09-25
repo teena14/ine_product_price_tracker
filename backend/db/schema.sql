@@ -76,3 +76,17 @@ CREATE TRIGGER trg_tracked_products_updated_at
   BEFORE UPDATE ON tracked_products
   FOR EACH ROW
   EXECUTE FUNCTION update_updated_at_column();
+
+
+-- ============================================================
+-- ROW LEVEL SECURITY
+-- This is a backend-only service — the service_role key is
+-- never exposed to the frontend. Disabling RLS is appropriate
+-- here. The backend enforces all access control itself.
+-- ============================================================
+ALTER TABLE tracked_products DISABLE ROW LEVEL SECURITY;
+ALTER TABLE scrape_attempts  DISABLE ROW LEVEL SECURITY;
+
+-- Ensure the service_role has full access (Supabase default, but explicit is safer)
+GRANT ALL ON tracked_products TO service_role;
+GRANT ALL ON scrape_attempts  TO service_role;

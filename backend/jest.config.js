@@ -3,8 +3,8 @@ const config = {
   // Use Node test environment
   testEnvironment: 'node',
 
-  // ESM support — requires --experimental-vm-modules flag (set in package.json)
-  extensionsToTreatAsEsm: ['.js'],
+  // ESM support — package.json has "type": "module" so .js files are treated as ESM automatically
+  // extensionsToTreatAsEsm is NOT needed (and causes an error) when type:module is set
 
   // Test file pattern
   testMatch: ['**/tests/**/*.test.js'],

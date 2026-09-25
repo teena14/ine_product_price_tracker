@@ -4,9 +4,8 @@ const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 if (!supabaseUrl || !supabaseKey) {
-  console.warn(
-    '[config] WARNING: SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY is not set. ' +
-    'Database operations will fail. Set real values before Phase 1.'
+  throw new Error(
+    'Missing required environment variables: SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set.'
   );
 }
 
