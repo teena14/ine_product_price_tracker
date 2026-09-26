@@ -1,25 +1,80 @@
 /**
- * Real Supabase integration coverage. These tests create and delete rows, so
- * they are opt-in: after applying migration_harden_scrape_attempts.sql run
- * RUN_DB_TESTS=true npm test from backend.
+ * Real Supabase integration coverage against a dedicated test project only.
+ * These tests create and delete rows. They run only when RUN_DB_TESTS=true and
+ * both TEST_SUPABASE_* credentials are present. The normal service-role key
+ * is never used; the normal URL is compared only to reject a same-project
+ * test configuration before any client is created.
  */
 import 'dotenv/config';
 import { randomUUID } from 'crypto';
-import { getSupabaseClient } from '../src/config/supabase.js';
-import {
+import { jest } from '@jest/globals';
+import { createClient } from '@supabase/supabase-js';
+
+function isNonEmptyString(value) {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+function isValidSupabaseUrl(value) {
+  if (!isNonEmptyString(value)) {
+    return false;
+  }
+
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' || url.protocol === 'http:';
+  } catch {
+    return false;
+  }
+}
+
+function pointsToApplicationDatabase(testUrl) {
+  if (!isValidSupabaseUrl(process.env.SUPABASE_URL)) {
+    return false;
+  }
+
+  return new URL(testUrl).origin === new URL(process.env.SUPABASE_URL).origin;
+}
+
+const hasTestDatabaseConfig =
+  isValidSupabaseUrl(process.env.TEST_SUPABASE_URL) &&
+  isNonEmptyString(process.env.TEST_SUPABASE_SERVICE_ROLE_KEY) &&
+  !pointsToApplicationDatabase(process.env.TEST_SUPABASE_URL);
+const shouldRunDatabaseTests = process.env.RUN_DB_TESTS === 'true' && hasTestDatabaseConfig;
+const testSupabaseClient = shouldRunDatabaseTests
+  ? createClient(process.env.TEST_SUPABASE_URL, process.env.TEST_SUPABASE_SERVICE_ROLE_KEY, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+      },
+    })
+  : null;
+
+function getTestSupabaseClient() {
+  if (!testSupabaseClient) {
+    throw new Error('Database integration tests require TEST_SUPABASE_* credentials.');
+  }
+
+  return testSupabaseClient;
+}
+
+// Repositories still import getSupabaseClient, but this test-suite-only mock
+// replaces it with the dedicated test-project client. This guarantees the
+// suite cannot connect through the normal application database client.
+jest.unstable_mockModule('../src/config/supabase.js', () => ({
+  getSupabaseClient: getTestSupabaseClient,
+}));
+
+const {
   createTrackedProduct,
   getTrackedProductById,
   listTrackedProducts,
-} from '../src/repositories/trackedProductsRepository.js';
-import {
+} = await import('../src/repositories/trackedProductsRepository.js');
+const {
   getScrapeHistory,
   saveScrapeAttempt,
-} from '../src/repositories/scrapeAttemptsRepository.js';
+} = await import('../src/repositories/scrapeAttemptsRepository.js');
 
-const hasDatabaseConfig = Boolean(
-  process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY
-);
-const describeDatabase = process.env.RUN_DB_TESTS === 'true' && hasDatabaseConfig ? describe : describe.skip;
+const describeDatabase = shouldRunDatabaseTests ? describe : describe.skip;
 
 function testTrackingData() {
   const suffix = randomUUID();
@@ -68,7 +123,14 @@ describeDatabase('Supabase shared-dashboard and scrape-history rules', () => {
       return;
     }
 
-    await getSupabaseClient().from('tracked_products').delete().in('id', [...cleanupIds]);
+    const ids = [...cleanupIds];
+    const { error } = await getTestSupabaseClient()
+      .from('tracked_products')
+      .delete()
+      .in('id', ids);
+    if (error) {
+      throw new Error('Failed to clean up integration-test rows.', { cause: error });
+    }
     cleanupIds.clear();
   });
 
@@ -89,7 +151,7 @@ describeDatabase('Supabase shared-dashboard and scrape-history rules', () => {
 
     await expect(createTrackedProduct(data)).rejects.toMatchObject({ code: 'DUPLICATE_TRACKING' });
 
-    const { error: deactivateError } = await getSupabaseClient()
+    const { error: deactivateError } = await getTestSupabaseClient()
       .from('tracked_products')
       .update({ active: false })
       .eq('id', first.id);
@@ -125,7 +187,7 @@ describeDatabase('Supabase shared-dashboard and scrape-history rules', () => {
     cleanupIds.add(tracked.id);
     await saveScrapeAttempt(successfulAttempt(tracked.id, `run-${randomUUID()}`));
 
-    const { error: invalidFailureError } = await getSupabaseClient()
+    const { error: invalidFailureError } = await getTestSupabaseClient()
       .from('scrape_attempts')
       .insert({
         ...failedAttempt(tracked.id, `run-${randomUUID()}`, 'failed', 1),
@@ -134,7 +196,7 @@ describeDatabase('Supabase shared-dashboard and scrape-history rules', () => {
       });
     expect(invalidFailureError).not.toBeNull();
 
-    const { error: deleteError } = await getSupabaseClient()
+    const { error: deleteError } = await getTestSupabaseClient()
       .from('tracked_products')
       .delete()
       .eq('id', tracked.id);

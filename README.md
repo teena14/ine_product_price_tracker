@@ -23,6 +23,7 @@ scheduler   → cron-job.org (calls POST /internal/scrape every 2 hours)
 
 - Node.js ≥ 20
 - A [Supabase](https://app.supabase.com) project
+- A separate Supabase project for opt-in database integration tests
 - A [cron-job.org](https://cron-job.org) account (for scheduled scraping)
 - The cron account is only needed when the planned Phase 9 endpoint is added.
 
@@ -70,6 +71,9 @@ For a new database, run `backend/db/schema.sql` in the Supabase SQL editor. For 
 | `PORT` | Port the server listens on (default: 3001) |
 | `SUPABASE_URL` | Your Supabase project URL |
 | `SUPABASE_SERVICE_ROLE_KEY` | Service role key (never expose to frontend) |
+| `TEST_SUPABASE_URL` | URL for a completely separate Supabase test project; used only by `db.integration.test.js` |
+| `TEST_SUPABASE_SERVICE_ROLE_KEY` | Service-role key for that separate test project only |
+| `RUN_DB_TESTS` | Set to `true` only when intentionally running database integration tests (default: `false`) |
 | `CRON_SECRET` | Shared secret for authenticating cron-job.org requests |
 | `INE_BASE_URL` | INE mock store base URL (e.g. `https://hire.ine.com`) |
 | `NODE_ENV` | `development` or `production` |
@@ -102,6 +106,33 @@ For a new database, run `backend/db/schema.sql` in the Supabase SQL editor. For 
 | `npm run dev` | Start Vite dev server |
 | `npm run build` | Build production bundle |
 | `npm run preview` | Preview production build |
+
+---
+
+## Database Integration Tests
+
+`backend/tests/db.integration.test.js` creates, updates, and deletes rows, so
+it is isolated from the normal application database. Create a separate
+Supabase project for tests and manually apply the required schema to that test
+project only. Do not point the test variables at development or production.
+
+Set these values in `backend/.env` (or inject them in a dedicated CI test
+environment):
+
+```bash
+TEST_SUPABASE_URL=https://<test-project-ref>.supabase.co
+TEST_SUPABASE_SERVICE_ROLE_KEY=<test-project-service-role-key>
+RUN_DB_TESTS=true
+```
+
+Then run `npm test` from `backend/`. The integration suite is skipped unless
+`RUN_DB_TESTS=true` and both non-empty, valid `TEST_SUPABASE_*` values are
+provided. It never falls back to `SUPABASE_URL` or
+`SUPABASE_SERVICE_ROLE_KEY`, and it skips if the test URL matches the normal
+application URL. Cleanup deletes only tracked-product IDs created
+by that test process, and cascade deletion removes their associated test
+attempts. Connection or authorization failures against the test project fail
+the opted-in suite rather than touching another database.
 
 ---
 
