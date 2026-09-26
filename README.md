@@ -96,6 +96,7 @@ For a new database, run `backend/db/schema.sql` in the Supabase SQL editor. For 
 | `npm run dev` | Start with file-watching (development) |
 | `npm start` | Start production server |
 | `npm test` | Run all tests |
+| `npm run test:coverage` | Run the default test suite with a coverage report |
 | `npm run lint` | Run ESLint |
 | `npm run scrape:once` | Manually scrape and persist one existing tracked product with bounded retries |
 
@@ -150,6 +151,22 @@ application URL. Cleanup deletes only tracked-product IDs created
 by that test process, and cascade deletion removes their associated test
 attempts. Connection or authorization failures against the test project fail
 the opted-in suite rather than touching another database.
+
+---
+
+## Testing and Hardening (Phase 11)
+
+The default backend test suite is deterministic and does not contact Supabase,
+the live INE store, or a real Playwright browser. It covers public API
+validation and destructive-route absence, cron authentication, append-only
+retry/persistence behavior, CSV formatting, repository query/error mapping,
+and the mocked browser quote workflow (including timeout and page cleanup).
+
+The real Supabase integration suite remains opt-in and uses only the separate
+`TEST_SUPABASE_*` project described above. Run `npm run test:coverage` to
+produce a backend coverage report. The frontend is checked with its production
+build and linter; no additional browser-test framework has been introduced for
+this small assignment.
 
 ---
 
