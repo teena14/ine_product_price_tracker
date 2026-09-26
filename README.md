@@ -97,7 +97,7 @@ For a new database, run `backend/db/schema.sql` in the Supabase SQL editor. For 
 | `npm start` | Start production server |
 | `npm test` | Run all tests |
 | `npm run lint` | Run ESLint |
-| `npm run scrape:once` | Manually scrape one product option with the bounded retry policy |
+| `npm run scrape:once` | Manually scrape and persist one existing tracked product with bounded retries |
 
 ### Frontend
 
@@ -106,6 +106,23 @@ For a new database, run `backend/db/schema.sql` in the Supabase SQL editor. For 
 | `npm run dev` | Start Vite dev server |
 | `npm run build` | Build production bundle |
 | `npm run preview` | Preview production build |
+
+---
+
+## Manual Scrape Persistence (Phase 7)
+
+To make a deliberate manual scrape against an existing active tracking record,
+set `SCRAPE_TRACKED_PRODUCT_ID` to that record's UUID or pass it directly:
+
+```bash
+npm run scrape:once -- <tracked-product-uuid>
+```
+
+The script runs the bounded retry policy and appends one database row for each
+event: `retried` for unsuccessful attempts that will retry, `success` for a
+validated quote, or `failed` for the final failure. It never updates an older
+successful observation. This is a manual tool only; the authenticated cron
+route and active-product loading remain Phase 9 work.
 
 ---
 
@@ -173,9 +190,8 @@ The working design notes are maintained in `design_decisions.txt` and
   live quote flow.
 - Scrape-attempt history is append-only and distinguishes `success`, `retried`,
   and `failed` outcomes.
-- Bounded, classified retry execution is implemented in the scraper; durable
-  attempt persistence and scheduling remain later phases, and no in-process
-  scheduler is used.
+- Retry events are validated and persisted append-only; scheduling remains a
+  later phase, and no in-process scheduler is used.
 
 ### AI Usage Disclosure
 

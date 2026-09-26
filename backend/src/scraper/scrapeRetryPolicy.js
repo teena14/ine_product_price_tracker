@@ -110,7 +110,8 @@ export function isRetryableScrapeError(error) {
 /**
  * Runs one product quote scrape with bounded retries and returns an immutable
  * in-memory event for every attempt. This module has no database or HTTP
- * endpoint dependency: Phase 7 will persist these events append-only.
+ * endpoint dependency: the Phase 7 persistence service consumes these events
+ * append-only.
  */
 export async function scrapeQuoteWithRetries(
   { productId, optionId },
@@ -225,7 +226,8 @@ function isolatedUnexpectedFailure({ runId, productId, optionId, error }) {
  * Executes in-memory product contexts independently. It deliberately does
  * not query Supabase, persist attempts, expose a route, or schedule work.
  * A future Phase 9 run can pass its one run ID to this helper after loading
- * active products, while Phase 7 persists every returned attempt event.
+ * active products, while the Phase 7 persistence service saves every returned
+ * attempt event.
  */
 export async function scrapeProductsIndependently(
   trackedProducts,

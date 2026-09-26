@@ -2,46 +2,51 @@
  * scrapeOnce.js — Manual one-shot scraper for development/testing.
  *
  * Usage:
- *   npm run scrape:once
+ *   npm run scrape:once -- <trackedProductId>
  *
- * Set SCRAPE_PRODUCT_ID and SCRAPE_OPTION_ID in backend/.env, or pass them as:
- *   npm run scrape:once -- <productId> <optionId>
+ * Set SCRAPE_TRACKED_PRODUCT_ID in backend/.env, or pass an existing tracked
+ * product UUID. Every retry event is persisted as its own scrape_attempt row.
  */
 
 import 'dotenv/config';
-import {
-  closeQuoteScraperBrowser,
-} from '../src/scraper/priceQuoteScraper.js';
-import { scrapeQuoteWithRetries } from '../src/scraper/scrapeRetryPolicy.js';
+import { getTrackedProductById } from '../src/repositories/trackedProductsRepository.js';
+import { closeQuoteScraperBrowser } from '../src/scraper/priceQuoteScraper.js';
+import { scrapeAndPersistTrackedProduct } from '../src/services/scrapePersistenceService.js';
 import { logger } from '../src/utils/logger.js';
 
-const [productId = process.env.SCRAPE_PRODUCT_ID, optionId = process.env.SCRAPE_OPTION_ID] = process.argv.slice(2);
+const [trackedProductId = process.env.SCRAPE_TRACKED_PRODUCT_ID] = process.argv.slice(2);
 
-if (!productId || !optionId) {
-  logger.error('Manual scrape requires a product and option ID');
+if (!trackedProductId) {
+  logger.error('Manual scrape requires an existing tracked product ID');
   process.exitCode = 1;
 } else {
   try {
-    const result = await scrapeQuoteWithRetries({ productId, optionId });
+    const trackedProduct = await getTrackedProductById(trackedProductId);
+    if (!trackedProduct.active) {
+      throw new Error('Manual scrape requires an active tracked product');
+    }
+
+    const result = await scrapeAndPersistTrackedProduct(trackedProduct);
+    const context = {
+      trackedProductId: trackedProduct.id,
+      productId: trackedProduct.product_id,
+      optionId: trackedProduct.option_id,
+      runId: result.runId,
+      attempts: result.attempts,
+      persistedAttemptIds: result.persistedAttempts.map((attempt) => attempt.id),
+      totalDurationMs: result.totalDurationMs,
+    };
 
     if (result.outcome === 'success') {
       logger.info('Manual scrape succeeded', {
-        productId,
-        optionId,
-        runId: result.runId,
+        ...context,
         ...result.quote,
-        attempts: result.attempts,
-        totalDurationMs: result.totalDurationMs,
       });
     } else {
       logger.error('Manual scrape failed', {
-        productId,
-        optionId,
-        runId: result.runId,
+        ...context,
         errorCode: result.error.code,
         errorMessage: result.error.message,
-        attempts: result.attempts,
-        totalDurationMs: result.totalDurationMs,
       });
       process.exitCode = 1;
     }
