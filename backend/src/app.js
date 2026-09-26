@@ -4,6 +4,8 @@ import cors from 'cors';
 import { randomUUID } from 'crypto';
 import productsRouter from './routes/products.js';
 import trackedProductsRouter from './routes/trackedProducts.js';
+import { handleInternalScrape } from './controllers/internalScrapeController.js';
+import { requireCronAuth } from './middleware/cronAuth.js';
 import { AppError } from './utils/errors.js';
 import { isSensitiveKey, logger, redactSensitiveData } from './utils/logger.js';
 
@@ -38,7 +40,7 @@ app.get('/health', (_req, res) => {
 // --- API routes ---
 app.use('/api/products', productsRouter);
 app.use('/api/tracked-products', trackedProductsRouter);
-// TODO (Phase 9): mount internal scrape route
+app.post('/internal/scrape', requireCronAuth, handleInternalScrape);
 
 function safeClientDetails(details) {
   const safeDetails = redactSensitiveData(details);

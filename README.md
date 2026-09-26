@@ -153,23 +153,31 @@ the opted-in suite rather than touching another database.
 
 ---
 
-## Scheduled Scraping (Phase 9 — planned)
+## Scheduled Scraping (Phase 9)
 
-The external two-hour cron endpoint is intentionally not implemented yet. It will be added in Phase 9 after retry and scrape-persistence work are complete; the application will not use `setInterval` or an in-process scheduler.
+An external scheduler such as [cron-job.org](https://cron-job.org) should call
+the protected endpoint every **two hours**. The backend does not use
+`setInterval` or any in-process scheduler.
 
-The planned cron job calls:
+The cron job calls:
 
 ```
 POST <backend-url>/internal/scrape
 Authorization: Bearer <CRON_SECRET>
 ```
 
-The planned backend flow:
+The backend flow:
 1. Authenticates the request
 2. Loads all active tracked products
 3. Scrapes each product independently with Playwright
 4. Persists results (success or failure) to Supabase
 5. Returns a run summary
+
+The endpoint returns only a summary such as `runId`, `total`, `successful`,
+and `failed`; detailed scraper errors remain in the append-only scrape log and
+server logs. An invalid/missing `CRON_SECRET` returns `401` and starts no
+scrape. Configure the cron provider manually after deployment with the
+production Render URL and an environment-only secret.
 
 ---
 
@@ -190,8 +198,8 @@ The working design notes are maintained in `design_decisions.txt` and
   live quote flow.
 - Scrape-attempt history is append-only and distinguishes `success`, `retried`,
   and `failed` outcomes.
-- Retry events are validated and persisted append-only; scheduling remains a
-  later phase, and no in-process scheduler is used.
+- Retry events are validated and persisted append-only; an authenticated
+  external cron trigger runs active products without an in-process scheduler.
 - Public product details show the latest attempt, successful price/stock
   observations, and the full scrape log without exposing history edits.
 
@@ -226,8 +234,10 @@ The dashboard provides a table-first history/log detail view. CSV export is inte
 | Endpoint | Description |
 |---|---|
 | `GET /health` | Health check |
+| `POST /internal/scrape` | Cron-authenticated run of all active tracked products |
 
-`POST /internal/scrape` will be added as a cron-authenticated endpoint in Phase 9.
+`POST /internal/scrape` requires `Authorization: Bearer <CRON_SECRET>` and is
+not a public dashboard action.
 
 ---
 
