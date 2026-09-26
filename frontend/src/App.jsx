@@ -1,9 +1,54 @@
 import { useEffect, useState } from 'react'
-import { createTrackedProduct, getProduct, listTrackedProducts, searchProducts } from './api'
+import {
+  createTrackedProduct,
+  getProduct,
+  getTrackedProductHistory,
+  listTrackedProducts,
+  searchProducts,
+} from './api'
 import './App.css'
 
 function formatProductMeta(product) {
   return [product.brand, product.category, product.sku].filter(Boolean).join(' · ')
+}
+
+function formatTimestamp(value) {
+  const date = new Date(value)
+
+  if (Number.isNaN(date.getTime())) {
+    return 'Unknown time'
+  }
+
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'medium',
+  }).format(date)
+}
+
+function formatPrice(value) {
+  const price = Number(value)
+
+  if (!Number.isFinite(price)) {
+    return '—'
+  }
+
+  return new Intl.NumberFormat('en-IN', {
+    style: 'currency',
+    currency: 'INR',
+    maximumFractionDigits: 2,
+  }).format(price)
+}
+
+function formatStock(value) {
+  return Number.isSafeInteger(value) ? String(value) : '—'
+}
+
+function formatDuration(value) {
+  return Number.isSafeInteger(value) ? `${value.toLocaleString()} ms` : '—'
+}
+
+function outcomeLabel(outcome) {
+  return outcome === 'success' ? 'Success' : outcome === 'retried' ? 'Retried' : 'Failed'
 }
 
 function App() {
@@ -17,6 +62,7 @@ function App() {
     products: [],
     error: '',
   })
+  const [historyState, setHistoryState] = useState({ status: 'idle', data: null, error: '' })
 
   useEffect(() => {
     async function loadTrackedProducts() {
@@ -83,10 +129,26 @@ function App() {
         products: [trackedProduct, ...current.products],
         error: '',
       }))
+      setHistoryState({ status: 'idle', data: null, error: '' })
       setTrackingState({ status: 'success', error: '' })
     } catch (error) {
       setTrackingState({ status: 'error', error: error.message })
     }
+  }
+
+  async function handleShowHistory(trackedProductId) {
+    setHistoryState({ status: 'loading', data: null, error: '' })
+
+    try {
+      const data = await getTrackedProductHistory(trackedProductId)
+      setHistoryState({ status: 'success', data, error: '' })
+    } catch (error) {
+      setHistoryState({ status: 'error', data: null, error: error.message })
+    }
+  }
+
+  function handleCloseHistory() {
+    setHistoryState({ status: 'idle', data: null, error: '' })
   }
 
   const products = searchState.data?.products ?? []
@@ -94,6 +156,13 @@ function App() {
   const selectedOption = selectedProduct?.options.find(
     (option) => option.optionId === selectedOptionId
   )
+  const selectedTrackedProduct = historyState.data?.trackedProduct
+  const scrapeAttempts = historyState.data?.attempts ?? []
+  const latestAttempt = scrapeAttempts[0] ?? null
+  const successfulAttempts = scrapeAttempts
+    .filter((attempt) => attempt.outcome === 'success')
+    .slice()
+    .reverse()
 
   return (
     <main className="app-shell">
@@ -258,12 +327,167 @@ function App() {
                   <h3>{product.product_name}</h3>
                   <p>{product.option_name}</p>
                 </div>
-                <span className="pending-status">Awaiting first scrape</span>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={() => handleShowHistory(product.id)}
+                >
+                  View details
+                </button>
               </li>
             ))}
           </ul>
         )}
       </section>
+
+      {historyState.status === 'loading' && (
+        <p className="message loading" role="status">Loading scrape history…</p>
+      )}
+      {historyState.status === 'error' && (
+        <p className="message error" role="alert">{historyState.error}</p>
+      )}
+
+      {historyState.status === 'success' && (
+        <section className="history-section" aria-labelledby="history-heading">
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">TRACKED PRODUCT DETAILS</p>
+              <h2 id="history-heading">{selectedTrackedProduct.product_name}</h2>
+              <p>{selectedTrackedProduct.option_name}</p>
+              <p className="product-id">Store product ID: {selectedTrackedProduct.product_id}</p>
+            </div>
+            <div className="history-actions">
+              <a href={selectedTrackedProduct.product_url} target="_blank" rel="noreferrer">
+                View in store
+              </a>
+              <button type="button" className="secondary-button" onClick={handleCloseHistory}>
+                Close details
+              </button>
+            </div>
+          </div>
+
+          <div className="latest-status-card">
+            <div>
+              <h3>Latest scrape status</h3>
+              {latestAttempt ? (
+                <p>Recorded {formatTimestamp(latestAttempt.scraped_at)}</p>
+              ) : (
+                <p>No scrape attempt has been recorded yet.</p>
+              )}
+            </div>
+            {latestAttempt ? (
+              <div className="latest-status-value">
+                <span className={`status-badge is-${latestAttempt.outcome}`}>
+                  {outcomeLabel(latestAttempt.outcome)}
+                </span>
+                {latestAttempt.outcome === 'success' ? (
+                  <p>{formatPrice(latestAttempt.price)} · {formatStock(latestAttempt.stock)} in stock</p>
+                ) : (
+                  <p>{latestAttempt.error_code}: {latestAttempt.error_message}</p>
+                )}
+              </div>
+            ) : (
+              <span className="status-badge is-awaiting">Awaiting first scrape</span>
+            )}
+          </div>
+
+          <div className="history-block">
+            <div className="history-block-heading">
+              <div>
+                <h3>Price and stock history</h3>
+                <p>Validated successful observations, oldest first.</p>
+              </div>
+              <span className="count-label">
+                {successfulAttempts.length} observation{successfulAttempts.length === 1 ? '' : 's'}
+              </span>
+            </div>
+
+            {successfulAttempts.length === 0 ? (
+              <div className="empty-state compact-empty-state">
+                <h3>No successful price observations yet</h3>
+                <p>Failures are retained below in the scrape log.</p>
+              </div>
+            ) : (
+              <div className="table-wrap">
+                <table>
+                  <caption className="visually-hidden">Successful price and stock observations</caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">Timestamp</th>
+                      <th scope="col">Price</th>
+                      <th scope="col">Stock</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {successfulAttempts.map((attempt) => (
+                      <tr key={attempt.id}>
+                        <td>{formatTimestamp(attempt.scraped_at)}</td>
+                        <td>{formatPrice(attempt.price)}</td>
+                        <td>{formatStock(attempt.stock)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          <div className="history-block">
+            <div className="history-block-heading">
+              <div>
+                <h3>Scrape log</h3>
+                <p>Every attempt is visible, including retries and final failures.</p>
+              </div>
+              <span className="count-label">
+                {scrapeAttempts.length} attempt{scrapeAttempts.length === 1 ? '' : 's'}
+              </span>
+            </div>
+
+            {scrapeAttempts.length === 0 ? (
+              <div className="empty-state compact-empty-state">
+                <h3>No scrape log entries yet</h3>
+                <p>The first manual or scheduled scrape will appear here.</p>
+              </div>
+            ) : (
+              <div className="table-wrap">
+                <table>
+                  <caption className="visually-hidden">Complete scrape log</caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">Timestamp</th>
+                      <th scope="col">Attempt</th>
+                      <th scope="col">Outcome</th>
+                      <th scope="col">Price</th>
+                      <th scope="col">Stock</th>
+                      <th scope="col">Duration</th>
+                      <th scope="col">Details</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {scrapeAttempts.map((attempt) => (
+                      <tr key={attempt.id}>
+                        <td>{formatTimestamp(attempt.scraped_at)}</td>
+                        <td>{attempt.attempt_number}</td>
+                        <td>
+                          <span className={`status-badge is-${attempt.outcome}`}>
+                            {outcomeLabel(attempt.outcome)}
+                          </span>
+                        </td>
+                        <td>{formatPrice(attempt.price)}</td>
+                        <td>{formatStock(attempt.stock)}</td>
+                        <td>{formatDuration(attempt.duration_ms)}</td>
+                        <td className="attempt-details">
+                          {attempt.error_code ? `${attempt.error_code}: ${attempt.error_message}` : 'Validated quote'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </section>
+      )}
     </main>
   )
 }

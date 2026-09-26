@@ -192,6 +192,8 @@ The working design notes are maintained in `design_decisions.txt` and
   and `failed` outcomes.
 - Retry events are validated and persisted append-only; scheduling remains a
   later phase, and no in-process scheduler is used.
+- Public product details show the latest attempt, successful price/stock
+  observations, and the full scrape log without exposing history edits.
 
 ### AI Usage Disclosure
 
@@ -215,8 +217,9 @@ The working design notes are maintained in `design_decisions.txt` and
 | `POST /api/tracked-products` | Public additive action: add a product option to the shared tracker |
 | `GET /api/tracked-products` | List all active shared tracked products |
 | `GET /api/tracked-products/:id` | Get one public tracked product |
+| `GET /api/tracked-products/:id/history` | Get the tracked product and its complete public scrape-attempt history |
 
-History/log views and CSV export are intentionally deferred to Phases 8 and 10. Public stop, delete, edit, reset, and schedule/configuration routes are intentionally absent.
+The dashboard provides a table-first history/log detail view. CSV export is intentionally deferred to Phase 10. Public stop, delete, history edit, reset, and schedule/configuration routes are intentionally absent.
 
 ### Internal
 

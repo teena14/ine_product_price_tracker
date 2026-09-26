@@ -4,6 +4,7 @@ const mockGetProductById = jest.fn();
 const mockCreateTrackedProduct = jest.fn();
 const mockListTrackedProductsFromRepository = jest.fn();
 const mockGetTrackedProductById = jest.fn();
+const mockGetScrapeHistory = jest.fn();
 
 jest.unstable_mockModule('../src/scraper/ineHttpClient.js', () => ({
   getProductById: mockGetProductById,
@@ -13,10 +14,14 @@ jest.unstable_mockModule('../src/repositories/trackedProductsRepository.js', () 
   listTrackedProducts: mockListTrackedProductsFromRepository,
   getTrackedProductById: mockGetTrackedProductById,
 }));
+jest.unstable_mockModule('../src/repositories/scrapeAttemptsRepository.js', () => ({
+  getScrapeHistory: mockGetScrapeHistory,
+}));
 
 const {
   createTrackedProductFromSelection,
   getTrackedProduct,
+  getTrackedProductHistory,
   listTrackedProducts,
 } = await import('../src/services/trackedProductsService.js');
 
@@ -76,5 +81,26 @@ describe('trackedProductsService', () => {
 
     expect(mockListTrackedProductsFromRepository).toHaveBeenCalledWith();
     expect(mockGetTrackedProductById).toHaveBeenCalledWith('product-id');
+  });
+
+  test('returns public history only after resolving the tracked product', async () => {
+    const trackedProduct = { id: 'product-id', product_name: 'History Product' };
+    const attempts = [{ id: 'attempt-id', outcome: 'failed' }];
+    mockGetTrackedProductById.mockResolvedValue(trackedProduct);
+    mockGetScrapeHistory.mockResolvedValue(attempts);
+
+    await expect(getTrackedProductHistory('product-id')).resolves.toEqual({
+      trackedProduct,
+      attempts,
+    });
+    expect(mockGetTrackedProductById).toHaveBeenCalledWith('product-id');
+    expect(mockGetScrapeHistory).toHaveBeenCalledWith('product-id');
+  });
+
+  test('does not query history when the tracked product does not exist', async () => {
+    mockGetTrackedProductById.mockRejectedValue(new Error('not found'));
+
+    await expect(getTrackedProductHistory('missing-id')).rejects.toThrow('not found');
+    expect(mockGetScrapeHistory).not.toHaveBeenCalled();
   });
 });

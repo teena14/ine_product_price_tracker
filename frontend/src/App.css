@@ -64,7 +64,8 @@ h3 {
 
 .search-panel,
 .results-section,
-.selection-panel {
+.selection-panel,
+.history-section {
   border: 1px solid var(--border);
   border-radius: 16px;
   background: var(--surface);
@@ -148,7 +149,8 @@ button:disabled {
 }
 
 .results-section,
-.selection-panel {
+.selection-panel,
+.history-section {
   margin-top: 24px;
   padding: 28px;
 }
@@ -333,14 +335,164 @@ button:disabled {
   color: var(--muted);
 }
 
-.pending-status {
-  background: var(--info-background);
+.secondary-button {
+  background: var(--surface);
+  border-color: var(--border-strong);
+  color: var(--accent-strong);
+}
+
+.secondary-button:hover:not(:disabled) {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.latest-status-card {
+  align-items: center;
+  background: var(--subtle);
+  border-radius: 12px;
+  display: flex;
+  gap: 20px;
+  justify-content: space-between;
+  margin-bottom: 30px;
+  padding: 18px;
+}
+
+.latest-status-card h3,
+.history-block h3 {
+  margin-bottom: 4px;
+}
+
+.latest-status-card p,
+.history-block-heading p {
+  color: var(--muted);
+  margin-bottom: 0;
+}
+
+.product-id {
+  color: var(--muted);
+  font-size: 0.85rem;
+  margin: 6px 0 0;
+}
+
+.history-actions {
+  align-items: center;
+  display: flex;
+  gap: 14px;
+}
+
+.history-actions a {
+  color: var(--accent-strong);
+  font-size: 0.9rem;
+  font-weight: 700;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.history-actions a:hover {
+  text-decoration: underline;
+}
+
+.latest-status-value {
+  align-items: flex-end;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  text-align: right;
+}
+
+.latest-status-value p {
+  max-width: 340px;
+}
+
+.status-badge,
+.count-label {
   border-radius: 999px;
-  color: var(--info);
+  display: inline-block;
   font-size: 0.78rem;
   font-weight: 700;
   padding: 5px 9px;
   text-align: center;
+}
+
+.status-badge.is-success {
+  background: var(--success-background);
+  color: var(--success);
+}
+
+.status-badge.is-retried,
+.status-badge.is-awaiting {
+  background: var(--info-background);
+  color: var(--info);
+}
+
+.status-badge.is-failed {
+  background: var(--error-background);
+  color: var(--error);
+}
+
+.history-block + .history-block {
+  border-top: 1px solid var(--border);
+  margin-top: 30px;
+  padding-top: 30px;
+}
+
+.history-block-heading {
+  align-items: flex-start;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.count-label {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  white-space: nowrap;
+}
+
+.compact-empty-state {
+  text-align: left;
+}
+
+.table-wrap {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow-x: auto;
+}
+
+table {
+  border-collapse: collapse;
+  min-width: 620px;
+  width: 100%;
+}
+
+th,
+td {
+  border-bottom: 1px solid var(--border);
+  padding: 12px 14px;
+  text-align: left;
+  vertical-align: top;
+}
+
+th {
+  background: var(--subtle);
+  color: var(--heading);
+  font-size: 0.78rem;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+td {
+  font-size: 0.9rem;
+}
+
+.attempt-details {
+  color: var(--muted);
+  min-width: 250px;
 }
 
 .visually-hidden {
@@ -370,12 +522,20 @@ button:disabled {
   }
 
   .results-section,
-  .selection-panel {
+  .selection-panel,
+  .history-section {
     padding: 20px;
   }
 
   .section-heading,
-  .tracking-preview {
+  .tracking-preview,
+  .latest-status-card,
+  .history-block-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .history-actions {
     align-items: flex-start;
     flex-direction: column;
   }
@@ -383,5 +543,10 @@ button:disabled {
   .tracked-card {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .latest-status-value {
+    align-items: flex-start;
+    text-align: left;
   }
 }

@@ -4,6 +4,7 @@ import {
   getTrackedProductById,
   listTrackedProducts as listTrackedProductsFromRepository,
 } from '../repositories/trackedProductsRepository.js';
+import { getScrapeHistory } from '../repositories/scrapeAttemptsRepository.js';
 import { errors } from '../utils/errors.js';
 
 /**
@@ -43,4 +44,16 @@ export function listTrackedProducts() {
 
 export function getTrackedProduct(id) {
   return getTrackedProductById(id);
+}
+
+/**
+ * Public history is available for every shared tracked product. Resolve the
+ * parent record first so an unknown UUID remains a 404 rather than looking
+ * like an empty, valid history collection.
+ */
+export async function getTrackedProductHistory(id) {
+  const trackedProduct = await getTrackedProductById(id);
+  const attempts = await getScrapeHistory(id);
+
+  return { trackedProduct, attempts };
 }

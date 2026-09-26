@@ -1,6 +1,7 @@
 import {
   createTrackedProductFromSelection,
   getTrackedProduct,
+  getTrackedProductHistory,
   listTrackedProducts,
 } from '../services/trackedProductsService.js';
 import { errors } from '../utils/errors.js';
@@ -49,6 +50,16 @@ export async function handleGetTrackedProduct(req, res, next) {
   try {
     const trackedProduct = await getTrackedProduct(getTrackedProductId(req.params.id));
     res.json(trackedProduct);
+  } catch (error) {
+    next(error);
+  }
+}
+
+/** GET /api/tracked-products/:id/history - public immutable scrape history. */
+export async function handleGetTrackedProductHistory(req, res, next) {
+  try {
+    const history = await getTrackedProductHistory(getTrackedProductId(req.params.id));
+    res.json(history);
   } catch (error) {
     next(error);
   }

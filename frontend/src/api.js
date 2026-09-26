@@ -37,3 +37,7 @@ export function createTrackedProduct({ productId, optionId }) {
 export function listTrackedProducts() {
   return request('/api/tracked-products')
 }
+
+export function getTrackedProductHistory(trackedProductId) {
+  return request(`/api/tracked-products/${encodeURIComponent(trackedProductId)}/history`)
+}

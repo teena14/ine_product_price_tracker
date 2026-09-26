@@ -5,11 +5,13 @@ import { AppError } from '../src/utils/errors.js';
 const mockCreateTrackedProductFromSelection = jest.fn();
 const mockListTrackedProducts = jest.fn();
 const mockGetTrackedProduct = jest.fn();
+const mockGetTrackedProductHistory = jest.fn();
 
 jest.unstable_mockModule('../src/services/trackedProductsService.js', () => ({
   createTrackedProductFromSelection: mockCreateTrackedProductFromSelection,
   listTrackedProducts: mockListTrackedProducts,
   getTrackedProduct: mockGetTrackedProduct,
+  getTrackedProductHistory: mockGetTrackedProductHistory,
 }));
 
 const { default: app } = await import('../src/app.js');
@@ -69,6 +71,35 @@ describe('public shared tracked-product API', () => {
     await request(app).get(`/api/tracked-products/${TRACKED_PRODUCT_ID}`).expect(200);
 
     expect(mockGetTrackedProduct).toHaveBeenCalledWith(TRACKED_PRODUCT_ID);
+  });
+
+  test('returns public scrape history and logs by tracked-product ID', async () => {
+    const history = {
+      trackedProduct: { id: TRACKED_PRODUCT_ID, product_name: 'Halvard Headlamp One' },
+      attempts: [
+        {
+          id: 'attempt-1',
+          outcome: 'success',
+          price: '18145.5000',
+          stock: 12,
+          scraped_at: '2026-09-26T12:00:00.000Z',
+        },
+      ],
+    };
+    mockGetTrackedProductHistory.mockResolvedValue(history);
+
+    const response = await request(app)
+      .get(`/api/tracked-products/${TRACKED_PRODUCT_ID}/history`)
+      .expect(200);
+
+    expect(response.body).toEqual(history);
+    expect(mockGetTrackedProductHistory).toHaveBeenCalledWith(TRACKED_PRODUCT_ID);
+  });
+
+  test('validates history tracked-product IDs before calling the service', async () => {
+    await request(app).get('/api/tracked-products/not-a-uuid/history').expect(400);
+
+    expect(mockGetTrackedProductHistory).not.toHaveBeenCalled();
   });
 
   test('does not expose public stop, reactivate, or delete routes', async () => {
