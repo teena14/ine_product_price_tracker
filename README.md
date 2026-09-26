@@ -200,7 +200,25 @@ production Render URL and an environment-only secret.
 
 ## GitHub Actions CI/CD
 
-> _To be documented after Phase 12 implementation._
+`.github/workflows/ci.yml` runs on pull requests targeting `main` and on
+pushes to `main`. It has two independent Ubuntu/Node 20 jobs:
+
+- **Backend:** installs `backend/package-lock.json` with `npm ci`, runs ESLint,
+  then runs the deterministic test suite with coverage.
+- **Frontend:** installs `frontend/package-lock.json` with `npm ci`, runs the
+  frontend linter, then creates a production Vite build.
+
+The Node dependency cache is keyed by each job's lockfile. CI fixes
+`RUN_DB_TESTS=false`, so it never uses a Supabase project, production secrets,
+or live INE/Playwright scraping. When a test/build stage fails, any generated
+backend coverage or frontend build output is uploaded as a workflow artifact
+where available.
+
+There is intentionally no GitHub Actions deployment job. Once the Vercel and
+Render projects are connected to this repository, use their native deployment
+integration for `main` only and keep provider credentials in provider settings
+or GitHub Secrets if they become necessary. Pull requests must remain
+non-production, and GitHub Actions must never trigger scheduled scraping.
 
 ---
 
