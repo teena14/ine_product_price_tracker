@@ -19,7 +19,26 @@ const {
   scrapeCurrentQuote,
 } = await import('../src/scraper/priceQuoteScraper.js');
 
-function createPage({ gotoError, offerFailed = false } = {}) {
+function createTimeoutError() {
+  const error = new Error('timed out');
+  error.name = 'TimeoutError';
+  return error;
+}
+
+function createPage({ gotoError, offerFailed = false, ignoredStartClicks = 0 } = {}) {
+  const uiManifest = {
+    priceTag: 'strong',
+    classes: { priceValue: 'amt-h8' },
+  };
+  const manifestResponse = {
+    ok: jest.fn().mockReturnValue(true),
+    url: jest.fn().mockReturnValue('https://demo.inelabteamdev.com/api/v2/ui/manifest'),
+    json: jest.fn().mockResolvedValue(uiManifest),
+  };
+  const productResponse = {
+    ok: jest.fn().mockReturnValue(true),
+    url: jest.fn().mockReturnValue('https://demo.inelabteamdev.com/api/v2/items/2037'),
+  };
   const optionButton = {
     waitFor: jest.fn().mockResolvedValue(),
     click: jest.fn().mockResolvedValue(),
@@ -34,6 +53,7 @@ function createPage({ gotoError, offerFailed = false } = {}) {
   const picker = { getByRole: jest.fn().mockReturnValue(optionButton) };
   const price = { innerText: jest.fn().mockResolvedValue('₹18,145.50') };
   const stock = { innerText: jest.fn().mockResolvedValue('Available (12)') };
+  let remainingIgnoredStartClicks = ignoredStartClicks;
   const page = {
     close: jest.fn().mockResolvedValue(),
     goto: gotoError ? jest.fn().mockRejectedValue(gotoError) : jest.fn().mockResolvedValue(),
@@ -44,7 +64,7 @@ function createPage({ gotoError, offerFailed = false } = {}) {
       if (selector === '.offer-panel') {
         return panel;
       }
-      if (selector === '.offer-panel .offer-row b:visible') {
+      if (selector === '.offer-panel.offer-ready .offer-row strong[class~="amt-h8"]:visible') {
         return price;
       }
       if (selector === '.offer-panel .avail-pill:visible') {
@@ -54,7 +74,22 @@ function createPage({ gotoError, offerFailed = false } = {}) {
     }),
     mouse: { move: jest.fn().mockResolvedValue() },
     setDefaultTimeout: jest.fn(),
-    waitForFunction: jest.fn().mockResolvedValue(),
+    waitForFunction: jest.fn().mockImplementation((_predicate, options = {}) => {
+      if (options.timeout === 2_000 && remainingIgnoredStartClicks > 0) {
+        remainingIgnoredStartClicks -= 1;
+        return Promise.reject(createTimeoutError());
+      }
+      return Promise.resolve();
+    }),
+    waitForResponse: jest.fn().mockImplementation((predicate) => {
+      if (predicate(manifestResponse)) {
+        return Promise.resolve(manifestResponse);
+      }
+      if (predicate(productResponse)) {
+        return Promise.resolve(productResponse);
+      }
+      return Promise.reject(new Error('Unexpected response predicate'));
+    }),
     waitForTimeout: jest.fn().mockResolvedValue(),
   };
 
@@ -102,6 +137,8 @@ describe('Playwright quote workflow', () => {
     expect(optionButton.click).toHaveBeenCalledWith();
     expect(page.mouse.move).toHaveBeenCalledTimes(10);
     expect(priceControl.click).toHaveBeenCalledWith();
+    expect(page.waitForResponse).toHaveBeenCalledWith(expect.any(Function), { timeout: 20_000 });
+    expect(page.waitForResponse).toHaveBeenCalledTimes(2);
     expect(page.close).toHaveBeenCalledTimes(1);
 
     await closeQuoteScraperBrowser();
@@ -130,5 +167,18 @@ describe('Playwright quote workflow', () => {
       name: QuoteScraperError.name,
     });
     expect(page.close).toHaveBeenCalledTimes(1);
+  });
+
+  test('repeats the genuine interaction when the storefront silently drops a click', async () => {
+    const { page, priceControl } = createPage({ ignoredStartClicks: 1 });
+    configureBrowser(page);
+
+    await expect(scrapeCurrentQuote({ productId: '2037', optionId: 'o2' })).resolves.toEqual({
+      price: 18145.5,
+      stock: 12,
+    });
+
+    expect(priceControl.click).toHaveBeenCalledTimes(2);
+    expect(page.mouse.move).toHaveBeenCalledTimes(20);
   });
 });

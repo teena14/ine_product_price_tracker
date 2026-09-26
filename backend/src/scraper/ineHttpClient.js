@@ -20,7 +20,9 @@
 const BASE_URL = process.env.INE_BASE_URL || 'https://demo.inelabteamdev.com';
 const REQUEST_TIMEOUT_MS = 10000;
 const CATALOG_CACHE_TTL_MS = 5 * 60 * 1000;
-const CATALOG_PAGE_CONCURRENCY = 6;
+const CATALOG_PAGE_LIMIT = 60;
+const CATALOG_PAGE_MAX_ATTEMPTS = 3;
+const CATALOG_PAGE_RETRY_DELAY_MS = 300;
 
 let catalogCache;
 let catalogLoadPromise;
@@ -106,23 +108,51 @@ function pageSize(value) {
   return Number.isSafeInteger(value) && value > 0 ? value : 20;
 }
 
+function wait(delayMs) {
+  return new Promise((resolve) => setTimeout(resolve, delayMs));
+}
+
+function isRetryableCatalogError(error) {
+  return (
+    error instanceof IneHttpError &&
+    (error.code === 'INE_HTTP_TIMEOUT' ||
+      error.code === 'INE_NETWORK_ERROR' ||
+      error.status === 429 ||
+      error.status >= 500)
+  );
+}
+
 async function fetchCatalogPage(page) {
-  const params = new URLSearchParams({ page: String(page) });
+  const params = new URLSearchParams({
+    page: String(page),
+    limit: String(CATALOG_PAGE_LIMIT),
+  });
   const url = `${BASE_URL}/api/v2/listings?${params}`;
-  return fetchWithTimeout(url);
+
+  for (let attempt = 1; attempt <= CATALOG_PAGE_MAX_ATTEMPTS; attempt += 1) {
+    try {
+      return await fetchWithTimeout(url);
+    } catch (error) {
+      if (attempt === CATALOG_PAGE_MAX_ATTEMPTS || !isRetryableCatalogError(error)) {
+        throw error;
+      }
+
+      await wait(CATALOG_PAGE_RETRY_DELAY_MS * 2 ** (attempt - 1));
+    }
+  }
+
+  throw new Error('Catalog page retry loop ended unexpectedly');
 }
 
 async function fetchRemainingCatalogPages(totalPages) {
-  const pages = [];
+  const results = [];
 
   for (let page = 2; page <= totalPages; page += 1) {
-    pages.push(page);
-  }
-
-  const results = [];
-  for (let offset = 0; offset < pages.length; offset += CATALOG_PAGE_CONCURRENCY) {
-    const pageBatch = pages.slice(offset, offset + CATALOG_PAGE_CONCURRENCY);
-    results.push(...(await Promise.all(pageBatch.map(fetchCatalogPage))));
+    // The upstream catalog responds with 503 when several pages are requested
+    // at once. A cold cache is deliberately loaded serially; later searches
+    // reuse the short-lived in-process cache without more catalog requests.
+    // This keeps exact local filtering reliable without introducing a queue.
+    results.push(await fetchCatalogPage(page));
   }
 
   return results;

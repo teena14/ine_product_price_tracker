@@ -5,8 +5,13 @@ import { AppError } from '../utils/errors.js';
 const BASE_URL = process.env.INE_BASE_URL || 'https://demo.inelabteamdev.com';
 const NAVIGATION_TIMEOUT_MS = 20_000;
 const QUOTE_TIMEOUT_MS = 35_000;
+const QUOTE_START_TIMEOUT_MS = 2_000;
+const QUOTE_START_MAX_ATTEMPTS = 5;
 const MIN_POINTER_MOVES = 10;
 const POINTER_MOVE_DELAY_MS = 75;
+const UI_MANIFEST_PATH = '/api/v2/ui/manifest';
+const SAFE_HTML_TAG = /^[a-z][a-z0-9-]*$/i;
+const SAFE_CLASS_TOKEN = /^[a-z_-][a-z0-9_-]*$/i;
 
 let browserPromise;
 
@@ -45,12 +50,18 @@ function normalizeText(value) {
  * this function must identify the visible selling price, not surrounding text.
  */
 export function parseDisplayedPrice(value) {
-  const match = normalizeText(value).match(/(?:\d{1,3}(?:[,\s]\d{3})+|\d+)(?:\.\d+)?/);
-  if (!match) {
+  const text = normalizeText(value);
+  const europeanMatch = text.match(/\d{1,3}(?:\.\d{3})+,\d{2}\b/);
+  const match = text.match(/(?:\d{1,3}(?:[,\s]\d{3})+|\d+)(?:\.\d+)?/);
+  const normalizedNumber = europeanMatch
+    ? europeanMatch[0].replace(/\./g, '').replace(',', '.')
+    : match?.[0].replace(/[\s,]/g, '');
+
+  if (!normalizedNumber) {
     throw new QuoteScraperError('SCRAPE_VALIDATION_ERROR', 'The displayed price is missing or malformed');
   }
 
-  const price = Number(match[0].replace(/[\s,]/g, ''));
+  const price = Number(normalizedNumber);
   if (!Number.isFinite(price) || price <= 0) {
     throw new QuoteScraperError('SCRAPE_VALIDATION_ERROR', 'The displayed price is not a positive number');
   }
@@ -63,7 +74,7 @@ export function parseDisplayedPrice(value) {
  */
 export function parseDisplayedStock(value) {
   const text = normalizeText(value);
-  if (/\b(out of stock|unavailable)\b/i.test(text)) {
+  if (/\b(sold\s*out|out of stock|unavailable)\b/i.test(text)) {
     return 0;
   }
 
@@ -122,6 +133,71 @@ function productPageUrl(productId) {
   return new URL(`/item/${encodeURIComponent(productId)}`, BASE_URL).toString();
 }
 
+function isResponseAtPath(response, path) {
+  try {
+    return new URL(response.url()).pathname === path;
+  } catch {
+    return false;
+  }
+}
+
+function requireSuccessfulStoreResponse(response, label) {
+  if (!response.ok()) {
+    throw new QuoteScraperError('SCRAPE_UPSTREAM_ERROR', `The store could not load ${label}`);
+  }
+}
+
+/**
+ * The store rotates the visible price tag and class through its public UI
+ * manifest. Use the response loaded by this browser page, rather than a
+ * separately fetched manifest that could describe a newer layout. Attribute
+ * selectors avoid interpreting manifest data as arbitrary CSS.
+ */
+export function priceSelectorFromUiManifest(manifest) {
+  const tag = typeof manifest?.priceTag === 'string' ? manifest.priceTag.trim().toLowerCase() : '';
+  const classTokens =
+    typeof manifest?.classes?.priceValue === 'string'
+      ? manifest.classes.priceValue.trim().split(/\s+/).filter(Boolean)
+      : [];
+
+  if (!SAFE_HTML_TAG.test(tag) || classTokens.length === 0 || !classTokens.every((token) => SAFE_CLASS_TOKEN.test(token))) {
+    throw new QuoteScraperError(
+      'SCRAPE_UPSTREAM_ERROR',
+      'The store layout metadata did not identify the current price'
+    );
+  }
+
+  const requiredClasses = classTokens.map((token) => `[class~="${token}"]`).join('');
+  return `.offer-panel.offer-ready .offer-row ${tag}${requiredClasses}:visible`;
+}
+
+async function navigateToProductAndLoadUiManifest(page, productId) {
+  const manifestResponse = page.waitForResponse(
+    (response) => isResponseAtPath(response, UI_MANIFEST_PATH),
+    {
+      timeout: NAVIGATION_TIMEOUT_MS,
+    }
+  );
+  const productResponse = page.waitForResponse(
+    (response) => isResponseAtPath(response, `/api/v2/items/${encodeURIComponent(productId)}`),
+    {
+      timeout: NAVIGATION_TIMEOUT_MS,
+    }
+  );
+  const [manifest, product] = await Promise.all([
+    manifestResponse,
+    productResponse,
+    page.goto(productPageUrl(productId), {
+      waitUntil: 'domcontentloaded',
+      timeout: NAVIGATION_TIMEOUT_MS,
+    }),
+  ]);
+
+  requireSuccessfulStoreResponse(manifest, 'the current price layout');
+  requireSuccessfulStoreResponse(product, 'the selected product');
+  return manifest.json();
+}
+
 async function selectOption(page, productId, optionId) {
   const product = await getProductById(productId);
   const option = product.options.find((candidate) => candidate.optionId === optionId);
@@ -150,23 +226,41 @@ async function satisfyPriceInteraction(page) {
     throw new QuoteScraperError('QUOTE_UNAVAILABLE', 'Price panel has no visible bounding box');
   }
 
-  // The mock store requires several distinct mouse moves and a dwell period.
-  // These short bounded delays model that documented interaction; they are not
-  // a blind wait for a network response.
-  for (let step = 0; step < MIN_POINTER_MOVES; step += 1) {
-    await page.mouse.move(box.x + 16 + step * 12, box.y + 16 + (step % 3) * 8);
-    await page.waitForTimeout(POINTER_MOVE_DELAY_MS);
-  }
-
   const priceControl = panel.locator('button.ctl-main');
-  await page.waitForFunction(
-    () => {
-      const button = document.querySelector('.offer-panel button.ctl-main');
-      return Boolean(button && !button.disabled);
-    },
-    { timeout: NAVIGATION_TIMEOUT_MS }
-  );
-  await priceControl.click();
+
+  for (let startAttempt = 1; startAttempt <= QUOTE_START_MAX_ATTEMPTS; startAttempt += 1) {
+    // The mock store requires several distinct mouse moves and a dwell period.
+    // Its click wrapper can also intentionally drop one trusted click, so every
+    // bounded start attempt repeats the genuine browser interaction.
+    for (let step = 0; step < MIN_POINTER_MOVES; step += 1) {
+      await page.mouse.move(box.x + 16 + step * 12, box.y + 16 + (step % 3) * 8);
+      await page.waitForTimeout(POINTER_MOVE_DELAY_MS);
+    }
+
+    await page.waitForFunction(
+      () => {
+        const button = document.querySelector('.offer-panel button.ctl-main');
+        return Boolean(button && !button.disabled);
+      },
+      { timeout: NAVIGATION_TIMEOUT_MS }
+    );
+    await priceControl.click();
+
+    try {
+      await page.waitForFunction(
+        () => {
+          const pricePanel = document.querySelector('.offer-panel');
+          return Boolean(pricePanel && !pricePanel.classList.contains('offer-locked'));
+        },
+        { timeout: QUOTE_START_TIMEOUT_MS }
+      );
+      return;
+    } catch (error) {
+      if (error.name !== 'TimeoutError' || startAttempt === QUOTE_START_MAX_ATTEMPTS) {
+        throw error;
+      }
+    }
+  }
 }
 
 async function waitForQuote(page) {
@@ -174,7 +268,9 @@ async function waitForQuote(page) {
     await page.waitForFunction(
       () => {
         const panel = document.querySelector('.offer-panel');
-        return Boolean(panel?.querySelector('.offer-row b')) || panel?.classList.contains('offer-failed');
+        return Boolean(
+          panel?.classList.contains('offer-ready') || panel?.classList.contains('offer-failed')
+        );
       },
       { timeout: QUOTE_TIMEOUT_MS }
     );
@@ -204,17 +300,15 @@ export async function scrapeCurrentQuote({ productId, optionId }) {
     page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
     page.setDefaultTimeout(NAVIGATION_TIMEOUT_MS);
 
-    await page.goto(productPageUrl(productId), {
-      waitUntil: 'domcontentloaded',
-      timeout: NAVIGATION_TIMEOUT_MS,
-    });
+    const uiManifest = await navigateToProductAndLoadUiManifest(page, productId);
     await selectOption(page, productId, optionId);
     await satisfyPriceInteraction(page);
     await waitForQuote(page);
 
-    // The storefront also includes aria-hidden price decoys. Read only the
-    // visible <b> in the rendered offer row and the explicit stock pill.
-    const priceText = await page.locator('.offer-panel .offer-row b:visible').innerText();
+    // The storefront includes aria-hidden decoys and rotates its real price
+    // element. The manifest response from this page identifies the sole
+    // visible selling-price element without relying on a fixed tag or class.
+    const priceText = await page.locator(priceSelectorFromUiManifest(uiManifest)).innerText();
     const stockText = await page.locator('.offer-panel .avail-pill:visible').innerText();
 
     return validateQuote({

@@ -5,7 +5,9 @@ import {
   listTrackedProducts as listTrackedProductsFromRepository,
 } from '../repositories/trackedProductsRepository.js';
 import { getScrapeHistory } from '../repositories/scrapeAttemptsRepository.js';
+import { scrapeAndPersistTrackedProduct } from './scrapePersistenceService.js';
 import { errors } from '../utils/errors.js';
+import { logger } from '../utils/logger.js';
 
 /**
  * Creates a shared tracking record from authoritative INE metadata. The client
@@ -36,6 +38,33 @@ export async function createTrackedProductFromSelection({ productId, optionId })
     option_id: option.optionId,
     option_name: option.label,
   });
+}
+
+/**
+ * Creates a shared tracking record and immediately records its first quote.
+ * Expected scraper failures are returned by the retry service and persisted
+ * as immutable attempts. If persistence itself fails unexpectedly, retain the
+ * successfully created tracking record so a visitor is not encouraged to
+ * retry the add action and hit the global duplicate constraint.
+ */
+export async function createTrackedProductWithInitialScrape(
+  { productId, optionId },
+  { scrapeTrackedProduct = scrapeAndPersistTrackedProduct, log = logger } = {}
+) {
+  const trackedProduct = await createTrackedProductFromSelection({ productId, optionId });
+
+  try {
+    await scrapeTrackedProduct(trackedProduct);
+  } catch (error) {
+    log.error('Initial tracked-product scrape failed unexpectedly', {
+      trackedProductId: trackedProduct.id,
+      productId: trackedProduct.product_id,
+      optionId: trackedProduct.option_id,
+      error,
+    });
+  }
+
+  return trackedProduct;
 }
 
 export function listTrackedProducts() {

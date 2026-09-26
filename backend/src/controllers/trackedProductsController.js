@@ -1,5 +1,5 @@
 import {
-  createTrackedProductFromSelection,
+  createTrackedProductWithInitialScrape,
   getTrackedProduct,
   getTrackedProductHistory,
   listTrackedProducts,
@@ -29,7 +29,7 @@ export async function handleCreateTrackedProduct(req, res, next) {
       throw errors.validationError('optionId is required');
     }
 
-    const trackedProduct = await createTrackedProductFromSelection({ productId, optionId });
+    const trackedProduct = await createTrackedProductWithInitialScrape({ productId, optionId });
     res.status(201).json(trackedProduct);
   } catch (error) {
     next(error);

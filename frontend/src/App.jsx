@@ -180,8 +180,7 @@ function App() {
         products: [trackedProduct, ...current.products],
         error: '',
       }))
-      setHistoryState({ status: 'idle', data: null, error: '' })
-      setExportState({ status: 'idle', error: '' })
+      await handleShowHistory(trackedProduct.id)
       setTrackingState({ status: 'success', error: '' })
     } catch (error) {
       setTrackingState({ status: 'error', error: error.message })
@@ -394,11 +393,13 @@ function App() {
               disabled={!selectedOption || trackingState.status === 'loading'}
               onClick={handleTrackOption}
             >
-              {trackingState.status === 'loading' ? 'Tracking…' : 'Track option'}
+              {trackingState.status === 'loading' ? 'Tracking and scraping...' : 'Track option'}
             </button>
           </div>
           {trackingState.status === 'success' && (
-            <p className="message success" role="status">This product option is now being tracked.</p>
+            <p className="message success" role="status">
+              This product option is now being tracked. Its first scrape is shown below.
+            </p>
           )}
           {trackingState.status === 'error' && (
             <p className="message error" role="alert">{trackingState.error}</p>

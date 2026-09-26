@@ -5,6 +5,7 @@ const mockCreateTrackedProduct = jest.fn();
 const mockListTrackedProductsFromRepository = jest.fn();
 const mockGetTrackedProductById = jest.fn();
 const mockGetScrapeHistory = jest.fn();
+const mockScrapeAndPersistTrackedProduct = jest.fn();
 
 jest.unstable_mockModule('../src/scraper/ineHttpClient.js', () => ({
   getProductById: mockGetProductById,
@@ -17,9 +18,13 @@ jest.unstable_mockModule('../src/repositories/trackedProductsRepository.js', () 
 jest.unstable_mockModule('../src/repositories/scrapeAttemptsRepository.js', () => ({
   getScrapeHistory: mockGetScrapeHistory,
 }));
+jest.unstable_mockModule('../src/services/scrapePersistenceService.js', () => ({
+  scrapeAndPersistTrackedProduct: mockScrapeAndPersistTrackedProduct,
+}));
 
 const {
   createTrackedProductFromSelection,
+  createTrackedProductWithInitialScrape,
   getTrackedProduct,
   getTrackedProductHistory,
   listTrackedProducts,
@@ -52,6 +57,60 @@ describe('trackedProductsService', () => {
       product_name: 'Halvard Headlamp One',
       option_id: 'o2',
       option_name: 'Duo',
+    });
+  });
+
+  test('records an initial scrape after creating a shared tracking record', async () => {
+    const trackedProduct = {
+      id: 'tracked-id',
+      product_id: '2037',
+      option_id: 'o2',
+    };
+    mockGetProductById.mockResolvedValue({
+      productId: '2037',
+      productUrl: 'https://demo.inelabteamdev.com/item/2037',
+      name: 'Halvard Headlamp One',
+      options: [{ optionId: 'o2', label: 'Duo' }],
+    });
+    mockCreateTrackedProduct.mockResolvedValue(trackedProduct);
+    mockScrapeAndPersistTrackedProduct.mockResolvedValue({ outcome: 'success', attempts: [] });
+
+    await expect(
+      createTrackedProductWithInitialScrape({ productId: '2037', optionId: 'o2' })
+    ).resolves.toEqual(trackedProduct);
+
+    expect(mockScrapeAndPersistTrackedProduct).toHaveBeenCalledWith(trackedProduct);
+  });
+
+  test('keeps a created tracking record when its initial scrape fails unexpectedly', async () => {
+    const trackedProduct = {
+      id: 'tracked-id',
+      product_id: '2037',
+      option_id: 'o2',
+    };
+    const error = new Error('database service unavailable');
+    const log = { error: jest.fn() };
+    mockGetProductById.mockResolvedValue({
+      productId: '2037',
+      productUrl: 'https://demo.inelabteamdev.com/item/2037',
+      name: 'Halvard Headlamp One',
+      options: [{ optionId: 'o2', label: 'Duo' }],
+    });
+    mockCreateTrackedProduct.mockResolvedValue(trackedProduct);
+    mockScrapeAndPersistTrackedProduct.mockRejectedValue(error);
+
+    await expect(
+      createTrackedProductWithInitialScrape(
+        { productId: '2037', optionId: 'o2' },
+        { log }
+      )
+    ).resolves.toEqual(trackedProduct);
+
+    expect(log.error).toHaveBeenCalledWith('Initial tracked-product scrape failed unexpectedly', {
+      trackedProductId: 'tracked-id',
+      productId: '2037',
+      optionId: 'o2',
+      error,
     });
   });
 

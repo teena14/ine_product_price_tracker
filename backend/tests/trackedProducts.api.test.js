@@ -2,14 +2,14 @@ import { jest } from '@jest/globals';
 import request from 'supertest';
 import { AppError } from '../src/utils/errors.js';
 
-const mockCreateTrackedProductFromSelection = jest.fn();
+const mockCreateTrackedProductWithInitialScrape = jest.fn();
 const mockListTrackedProducts = jest.fn();
 const mockGetTrackedProduct = jest.fn();
 const mockGetTrackedProductHistory = jest.fn();
 const mockExportTrackedProductHistory = jest.fn();
 
 jest.unstable_mockModule('../src/services/trackedProductsService.js', () => ({
-  createTrackedProductFromSelection: mockCreateTrackedProductFromSelection,
+  createTrackedProductWithInitialScrape: mockCreateTrackedProductWithInitialScrape,
   listTrackedProducts: mockListTrackedProducts,
   getTrackedProduct: mockGetTrackedProduct,
   getTrackedProductHistory: mockGetTrackedProductHistory,
@@ -27,9 +27,9 @@ describe('public shared tracked-product API', () => {
     jest.clearAllMocks();
   });
 
-  test('adds a product option to the public shared tracker without a cookie', async () => {
+  test('adds and initially scrapes a product option without a cookie', async () => {
     const trackedProduct = { id: TRACKED_PRODUCT_ID, product_name: 'Halvard Headlamp One' };
-    mockCreateTrackedProductFromSelection.mockResolvedValue(trackedProduct);
+    mockCreateTrackedProductWithInitialScrape.mockResolvedValue(trackedProduct);
 
     const response = await request(app)
       .post('/api/tracked-products')
@@ -37,7 +37,7 @@ describe('public shared tracked-product API', () => {
       .expect(201);
 
     expect(response.body).toEqual(trackedProduct);
-    expect(mockCreateTrackedProductFromSelection).toHaveBeenCalledWith({
+    expect(mockCreateTrackedProductWithInitialScrape).toHaveBeenCalledWith({
       productId: '2037',
       optionId: 'o2',
     });
@@ -47,7 +47,7 @@ describe('public shared tracked-product API', () => {
   test('validates required identifiers before calling the service', async () => {
     await request(app).post('/api/tracked-products').send({ productId: 'not-a-number' }).expect(400);
 
-    expect(mockCreateTrackedProductFromSelection).not.toHaveBeenCalled();
+    expect(mockCreateTrackedProductWithInitialScrape).not.toHaveBeenCalled();
   });
 
   test('returns the same public dashboard list to requests with different cookies', async () => {
@@ -160,7 +160,7 @@ describe('public shared tracked-product API', () => {
   });
 
   test('redacts a sensitive value accidentally included in operational error details', async () => {
-    mockCreateTrackedProductFromSelection.mockRejectedValue(
+    mockCreateTrackedProductWithInitialScrape.mockRejectedValue(
       new AppError('VALIDATION_ERROR', 'Invalid input', 400, [
         { field: 'password', value: 'must-not-leak' },
       ])

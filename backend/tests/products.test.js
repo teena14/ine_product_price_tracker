@@ -85,10 +85,10 @@ afterEach(() => {
 function mockFullCatalog() {
   nock(INE_BASE)
     .get('/api/v2/listings')
-    .query({ page: '1' })
+    .query({ page: '1', limit: '60' })
     .reply(200, MOCK_LISTINGS_PAGE_ONE)
     .get('/api/v2/listings')
-    .query({ page: '2' })
+    .query({ page: '2', limit: '60' })
     .reply(200, MOCK_LISTINGS_PAGE_TWO);
 }
 
@@ -144,6 +144,25 @@ describe('GET /api/products/search', () => {
     expect(nock.isDone()).toBe(true);
   });
 
+  test('retries a transient catalog page failure before filtering the result', async () => {
+    nock(INE_BASE)
+      .get('/api/v2/listings')
+      .query({ page: '1', limit: '60' })
+      .reply(503, 'Temporarily unavailable')
+      .get('/api/v2/listings')
+      .query({ page: '1', limit: '60' })
+      .reply(200, MOCK_LISTINGS_PAGE_ONE)
+      .get('/api/v2/listings')
+      .query({ page: '2', limit: '60' })
+      .reply(200, MOCK_LISTINGS_PAGE_TWO);
+
+    const res = await request(app).get('/api/products/search?q=three').expect(200);
+
+    expect(res.body.products).toEqual([
+      expect.objectContaining({ productId: '2103', name: 'Halvard Headlamp Three' }),
+    ]);
+  });
+
   test('returns 400 when query param q is missing', async () => {
     const res = await request(app)
       .get('/api/products/search')
@@ -171,7 +190,7 @@ describe('GET /api/products/search', () => {
   test('handles INE API 500 error gracefully', async () => {
     nock(INE_BASE)
       .get('/api/v2/listings')
-      .query({ page: '1' })
+      .query({ page: '1', limit: '60' })
       .reply(500, 'Internal Server Error');
 
     const res = await request(app)
@@ -188,7 +207,7 @@ describe('GET /api/products/search', () => {
   test('handles INE API network error gracefully', async () => {
     nock(INE_BASE)
       .get('/api/v2/listings')
-      .query({ page: '1' })
+      .query({ page: '1', limit: '60' })
       .replyWithError('ECONNREFUSED');
 
     const res = await request(app)

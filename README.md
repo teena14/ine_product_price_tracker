@@ -1,6 +1,6 @@
 # INE Product Price Tracker
 
-A production-minded, shared public dashboard that tracks INE product prices and stock levels. Visitors can search, view the common tracked list, and add a product option; destructive controls are intentionally not public.
+A production-minded, shared public dashboard that tracks INE product prices and stock levels. Visitors can search, view the common tracked list, and add a product option; each new option receives an immediate first scrape. Destructive controls are intentionally not public.
 
 ---
 
@@ -16,6 +16,11 @@ scheduler   → cron-job.org (calls POST /internal/scrape every 2 hours)
 **Scraping strategy:**
 - HTTP fetch for product catalog/search (INE `/api/v2/listings`, `/api/v2/items/{id}`)
 - Playwright for live price/stock (requires browser-side interaction and quote decoding)
+- The quote page’s public UI manifest determines its rotating price tag and
+  class. The scraper captures that response from the same browser page and
+  waits for the stable quote state, rather than relying on a fixed selector.
+  It performs the required real pointer movement and trusted click; it does
+  not call the protected quote endpoint directly.
 
 ---
 
@@ -109,6 +114,16 @@ For a new database, run `backend/db/schema.sql` in the Supabase SQL editor. For 
 | `npm run preview` | Preview production build |
 
 ---
+
+## Initial Scrape When Tracking
+
+When a visitor adds a new product option, `POST /api/tracked-products` creates
+the shared tracking record and then runs the normal bounded retry-and-persist
+flow before returning. The dashboard opens the new record's details so the
+first successful price/stock observation, or its retried/failed attempts, is
+visible straight away. A normal scraper failure does not undo tracking: its
+append-only attempt rows remain visible and the next scheduled run can try
+again.
 
 ## Manual Scrape Persistence (Phase 7)
 
@@ -259,7 +274,7 @@ The working design notes are maintained in `design_decisions.txt` and
 
 | Endpoint | Description |
 |---|---|
-| `POST /api/tracked-products` | Public additive action: add a product option to the shared tracker |
+| `POST /api/tracked-products` | Public additive action: add a product option and record its first bounded scrape |
 | `GET /api/tracked-products` | List all active shared tracked products |
 | `GET /api/tracked-products/:id` | Get one public tracked product |
 | `GET /api/tracked-products/:id/history` | Get the tracked product and its complete public scrape-attempt history |
