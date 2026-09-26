@@ -12,10 +12,13 @@ let browserPromise;
 
 const STATUS_BY_CODE = Object.freeze({
   INVALID_OPTION: 400,
+  PRODUCT_NOT_FOUND: 404,
   SCRAPE_TIMEOUT: 504,
   SCRAPE_NETWORK_ERROR: 502,
+  SCRAPE_UPSTREAM_ERROR: 502,
   SCRAPE_VALIDATION_ERROR: 422,
   QUOTE_UNAVAILABLE: 503,
+  SCRAPE_BROWSER_ERROR: 502,
   SCRAPE_FAILED: 502,
 });
 
@@ -223,12 +226,24 @@ export async function scrapeCurrentQuote({ productId, optionId }) {
       throw error;
     }
     if (error instanceof IneHttpError) {
-      throw new QuoteScraperError('SCRAPE_NETWORK_ERROR', 'Unable to reach the store while scraping', error);
+      if (error.code === 'INE_HTTP_TIMEOUT') {
+        throw new QuoteScraperError('SCRAPE_TIMEOUT', 'The store API timed out while preparing the quote', error);
+      }
+      if (error.code === 'INE_NETWORK_ERROR') {
+        throw new QuoteScraperError('SCRAPE_NETWORK_ERROR', 'Unable to reach the store while scraping', error);
+      }
+      if (error.status === 404) {
+        throw new QuoteScraperError('PRODUCT_NOT_FOUND', 'The selected product is no longer available', error);
+      }
+      if (error.status >= 500) {
+        throw new QuoteScraperError('SCRAPE_UPSTREAM_ERROR', 'The store is temporarily unavailable', error);
+      }
+      throw new QuoteScraperError('SCRAPE_FAILED', 'The store rejected the quote request', error);
     }
     if (error.name === 'TimeoutError') {
       throw new QuoteScraperError('SCRAPE_TIMEOUT', 'The browser operation timed out', error);
     }
-    throw new QuoteScraperError('SCRAPE_FAILED', 'The quote scraper failed', error);
+    throw new QuoteScraperError('SCRAPE_BROWSER_ERROR', 'The browser quote operation failed', error);
   } finally {
     await page?.close();
   }

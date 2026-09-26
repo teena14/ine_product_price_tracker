@@ -93,7 +93,7 @@ For a new database, run `backend/db/schema.sql` in the Supabase SQL editor. For 
 | `npm start` | Start production server |
 | `npm test` | Run all tests |
 | `npm run lint` | Run ESLint |
-| `npm run scrape:once` | Manually scrape one tracked product (testing) |
+| `npm run scrape:once` | Manually scrape one product option with the bounded retry policy |
 
 ### Frontend
 
@@ -142,8 +142,9 @@ The working design notes are maintained in `design_decisions.txt` and
   live quote flow.
 - Scrape-attempt history is append-only and distinguishes `success`, `retried`,
   and `failed` outcomes.
-- Retry execution and scheduling remain future phases; no in-process scheduler
-  is used.
+- Bounded, classified retry execution is implemented in the scraper; durable
+  attempt persistence and scheduling remain later phases, and no in-process
+  scheduler is used.
 
 ### AI Usage Disclosure
 
