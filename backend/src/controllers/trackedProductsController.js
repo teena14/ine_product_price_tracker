@@ -1,9 +1,7 @@
-import { getSessionId } from '../middleware/session.js';
 import {
-  createTrackedProductForSession,
-  deactivateTrackedProductForSession,
-  getTrackedProductForSession,
-  listTrackedProductsForSession,
+  createTrackedProductFromSelection,
+  getTrackedProduct,
+  listTrackedProducts,
 } from '../services/trackedProductsService.js';
 import { errors } from '../utils/errors.js';
 
@@ -16,7 +14,7 @@ function getTrackedProductId(id) {
   return id;
 }
 
-/** POST /api/tracked-products */
+/** POST /api/tracked-products - public, additive shared-dashboard action. */
 export async function handleCreateTrackedProduct(req, res, next) {
   try {
     const productId = String(req.body?.productId || '');
@@ -29,46 +27,28 @@ export async function handleCreateTrackedProduct(req, res, next) {
       throw errors.validationError('optionId is required');
     }
 
-    const trackedProduct = await createTrackedProductForSession({
-      productId,
-      optionId,
-      sessionId: getSessionId(req),
-    });
-
+    const trackedProduct = await createTrackedProductFromSelection({ productId, optionId });
     res.status(201).json(trackedProduct);
   } catch (error) {
     next(error);
   }
 }
 
-/** GET /api/tracked-products */
-export async function handleListTrackedProducts(req, res, next) {
+/** GET /api/tracked-products - public shared dashboard list. */
+export async function handleListTrackedProducts(_req, res, next) {
   try {
-    const trackedProducts = await listTrackedProductsForSession(getSessionId(req));
+    const trackedProducts = await listTrackedProducts();
     res.json({ trackedProducts });
   } catch (error) {
     next(error);
   }
 }
 
-/** GET /api/tracked-products/:id */
+/** GET /api/tracked-products/:id - public shared dashboard detail. */
 export async function handleGetTrackedProduct(req, res, next) {
   try {
-    const trackedProduct = await getTrackedProductForSession(
-      getTrackedProductId(req.params.id),
-      getSessionId(req)
-    );
+    const trackedProduct = await getTrackedProduct(getTrackedProductId(req.params.id));
     res.json(trackedProduct);
-  } catch (error) {
-    next(error);
-  }
-}
-
-/** DELETE /api/tracked-products/:id */
-export async function handleDeactivateTrackedProduct(req, res, next) {
-  try {
-    await deactivateTrackedProductForSession(getTrackedProductId(req.params.id), getSessionId(req));
-    res.status(204).end();
   } catch (error) {
     next(error);
   }

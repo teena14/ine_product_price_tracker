@@ -1,10 +1,11 @@
--- INE Product Price Tracker — Database Schema
--- Run this in your Supabase SQL editor to create the required tables.
--- Safe to run multiple times (uses IF NOT EXISTS / CREATE UNIQUE INDEX IF NOT EXISTS).
+-- INE Product Price Tracker - final database schema for Supabase/PostgreSQL.
+-- For an existing Phase 0-5 database, run migration_harden_scrape_attempts.sql
+-- once in the Supabase SQL editor before deploying this application version.
+
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 -- ============================================================
--- TABLE: tracked_products
--- Represents a user's intent to track a specific product+option
+-- tracked_products: a shared dashboard's intent to track product + option
 -- ============================================================
 CREATE TABLE IF NOT EXISTS tracked_products (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -14,58 +15,77 @@ CREATE TABLE IF NOT EXISTS tracked_products (
   option_id       TEXT NOT NULL,
   option_name     TEXT NOT NULL,
   active          BOOLEAN NOT NULL DEFAULT TRUE,
-  session_id      TEXT NOT NULL,           -- anonymous browser session that owns this record
   created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Prevent duplicate active tracking of the same product+option WITHIN THE SAME SESSION.
--- Different sessions can track the same product+option independently.
+-- Business constraint, not merely a lookup optimization: one active shared
+-- tracking record exists per product + option across the public dashboard.
 CREATE UNIQUE INDEX IF NOT EXISTS uq_tracked_products_active
-  ON tracked_products (session_id, product_id, option_id)
+  ON tracked_products (product_id, option_id)
   WHERE active = TRUE;
 
--- Index for filtering tracked products by session (used on every user-facing query)
-CREATE INDEX IF NOT EXISTS idx_tracked_products_session_id
-  ON tracked_products (session_id);
-
--- Index for listing active products (used by the scraper — scrapes ALL sessions)
-CREATE INDEX IF NOT EXISTS idx_tracked_products_active
-  ON tracked_products (active)
+-- Supports the trusted scraper's actual query:
+-- WHERE active = TRUE ORDER BY created_at ASC.
+CREATE INDEX IF NOT EXISTS idx_tracked_products_active_created_at
+  ON tracked_products (created_at ASC)
   WHERE active = TRUE;
-
 
 -- ============================================================
--- TABLE: scrape_attempts
--- Immutable log of every scraping attempt (success or failure).
--- A failed attempt never overwrites a previous successful one.
+-- scrape_attempts: immutable, append-only record of every attempt
 -- ============================================================
 CREATE TABLE IF NOT EXISTS scrape_attempts (
   id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   tracked_product_id  UUID NOT NULL REFERENCES tracked_products(id) ON DELETE CASCADE,
-  run_id              TEXT NOT NULL,           -- correlates all attempts in one scheduled run
-  timestamp           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  price               NUMERIC(12, 4),          -- NULL for failed attempts
-  stock               INTEGER,                 -- NULL for failed attempts
-  outcome             TEXT NOT NULL CHECK (outcome IN ('success', 'failed')),
-  error_code          TEXT,                    -- e.g. SCRAPE_TIMEOUT, QUOTE_UNAVAILABLE
+  run_id              TEXT NOT NULL,
+  scraped_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  price               NUMERIC(12, 4),
+  stock               INTEGER,
+  outcome             TEXT NOT NULL,
+  error_code          TEXT,
   error_message       TEXT,
-  attempt_number      INTEGER NOT NULL DEFAULT 1,
-  duration_ms         INTEGER,                 -- total duration of this attempt in ms
-  created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  attempt_number      INTEGER NOT NULL,
+  duration_ms         INTEGER,
+
+  -- An attempt number is per tracked product and per run. A new scheduled run
+  -- begins again at 1, while this uniqueness rule prevents duplicate inserts.
+  CONSTRAINT uq_scrape_attempts_run_tracked_product_attempt
+    UNIQUE (run_id, tracked_product_id, attempt_number),
+  CONSTRAINT scrape_attempts_outcome_check
+    CHECK (outcome IN ('success', 'retried', 'failed')),
+  CONSTRAINT scrape_attempts_stock_check
+    CHECK (stock IS NULL OR stock >= 0),
+  CONSTRAINT scrape_attempts_attempt_number_check
+    CHECK (attempt_number > 0),
+  CONSTRAINT scrape_attempts_duration_check
+    CHECK (duration_ms IS NULL OR duration_ms >= 0),
+  CONSTRAINT scrape_attempts_outcome_data_check
+    CHECK (
+      (
+        outcome = 'success'
+        AND price IS NOT NULL
+        AND price > 0
+        AND stock IS NOT NULL
+        AND error_code IS NULL
+        AND error_message IS NULL
+      )
+      OR
+      (
+        outcome IN ('retried', 'failed')
+        AND price IS NULL
+        AND stock IS NULL
+        AND NULLIF(BTRIM(error_code), '') IS NOT NULL
+        AND NULLIF(BTRIM(error_message), '') IS NOT NULL
+      )
+    )
 );
 
--- Index for fetching history of a specific tracked product (most recent first)
-CREATE INDEX IF NOT EXISTS idx_scrape_attempts_tracked_product
-  ON scrape_attempts (tracked_product_id, timestamp DESC);
-
--- Index for fetching the latest attempt for each product (dashboard display)
-CREATE INDEX IF NOT EXISTS idx_scrape_attempts_run_id
-  ON scrape_attempts (run_id);
-
+-- Serves history, latest-attempt, and export queries by tracked product.
+CREATE INDEX IF NOT EXISTS idx_scrape_attempts_tracked_product_scraped_at
+  ON scrape_attempts (tracked_product_id, scraped_at DESC);
 
 -- ============================================================
--- TRIGGER: auto-update tracked_products.updated_at on row change
+-- tracked_products.updated_at maintenance
 -- ============================================================
 CREATE OR REPLACE FUNCTION update_updated_at_column()
 RETURNS TRIGGER AS $$
@@ -81,16 +101,14 @@ CREATE TRIGGER trg_tracked_products_updated_at
   FOR EACH ROW
   EXECUTE FUNCTION update_updated_at_column();
 
-
 -- ============================================================
--- ROW LEVEL SECURITY
--- This is a backend-only service — the service_role key is
--- never exposed to the frontend. Disabling RLS is appropriate
--- here. The backend enforces all access control itself.
+-- Access control decision
 -- ============================================================
+-- The Express backend uses a Supabase service-role client, which bypasses RLS.
+-- This is a deliberately shared public dashboard, not an ownership model.
+-- Direct browser roles are denied table access; only the backend exposes the
+-- intentionally public read/add API, while destructive routes are absent.
 ALTER TABLE tracked_products DISABLE ROW LEVEL SECURITY;
-ALTER TABLE scrape_attempts  DISABLE ROW LEVEL SECURITY;
-
--- Ensure the service_role has full access (Supabase default, but explicit is safer)
-GRANT ALL ON tracked_products TO service_role;
-GRANT ALL ON scrape_attempts  TO service_role;
+ALTER TABLE scrape_attempts DISABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE tracked_products, scrape_attempts FROM anon, authenticated;
+GRANT ALL ON TABLE tracked_products, scrape_attempts TO service_role;

@@ -4,10 +4,7 @@ async function request(path, options = {}) {
   let response
 
   try {
-    response = await fetch(`${API_BASE_URL}${path}`, {
-      credentials: 'include',
-      ...options,
-    })
+    response = await fetch(`${API_BASE_URL}${path}`, options)
   } catch {
     throw new Error('Could not reach the API. Check that the backend is running.')
   }

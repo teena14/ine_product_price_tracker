@@ -1,9 +1,10 @@
 /**
- * db-connection-test.js — Verifies Supabase connection and schema.
+ * dbConnectionTest.js - Verifies Supabase connection and schema.
  * Run: node scripts/dbConnectionTest.js
  */
 import 'dotenv/config';
 import { createClient } from '@supabase/supabase-js';
+import { logger } from '../src/utils/logger.js';
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -11,34 +12,30 @@ const supabase = createClient(
   { auth: { persistSession: false, autoRefreshToken: false } }
 );
 
+function fail(message, error) {
+  logger.error(message, { error });
+  process.exitCode = 1;
+}
+
 async function run() {
-  console.log('[test] Testing Supabase connection...');
+  logger.info('Testing Supabase connection');
 
-  // Test tracked_products
-  const { error: e1 } = await supabase
-    .from('tracked_products')
-    .select('id')
-    .limit(1);
-
-  if (e1) {
-    console.error('[FAIL] tracked_products:', e1.message);
-    process.exit(1);
+  const { error: trackedProductsError } = await supabase.from('tracked_products').select('id').limit(1);
+  if (trackedProductsError) {
+    fail('tracked_products is not accessible', trackedProductsError);
+    return;
   }
-  console.log('[OK]   tracked_products — accessible');
+  logger.info('tracked_products is accessible');
 
-  // Test scrape_attempts
-  const { error: e2 } = await supabase
-    .from('scrape_attempts')
-    .select('id')
-    .limit(1);
-
-  if (e2) {
-    console.error('[FAIL] scrape_attempts:', e2.message);
-    process.exit(1);
+  const { error: scrapeAttemptsError } = await supabase.from('scrape_attempts').select('id').limit(1);
+  if (scrapeAttemptsError) {
+    fail('scrape_attempts is not accessible', scrapeAttemptsError);
+    return;
   }
-  console.log('[OK]   scrape_attempts  — accessible');
+  logger.info('scrape_attempts is accessible');
 
-  // Test insert + delete on tracked_products to verify write access and constraints
+  // This script uses an inactive row, so it does not become work for the
+  // all-active scraper.
   const testRow = {
     product_id: '__test__',
     product_url: 'https://hire.ine.com/__test__',
@@ -48,34 +45,27 @@ async function run() {
     active: false,
   };
 
-  const { data: inserted, error: e3 } = await supabase
+  const { data: inserted, error: insertError } = await supabase
     .from('tracked_products')
     .insert(testRow)
     .select('id')
     .single();
 
-  if (e3) {
-    console.error('[FAIL] Insert test failed:', e3.message);
-    process.exit(1);
+  if (insertError) {
+    fail('Insert test failed', insertError);
+    return;
   }
-  console.log('[OK]   Insert to tracked_products succeeded — id:', inserted.id);
+  logger.info('Insert to tracked_products succeeded', { trackedProductId: inserted.id });
 
-  // Clean up test row
-  const { error: e4 } = await supabase
-    .from('tracked_products')
-    .delete()
-    .eq('id', inserted.id);
-
-  if (e4) {
-    console.error('[WARN] Cleanup failed (manual cleanup needed):', e4.message);
-  } else {
-    console.log('[OK]   Test row deleted — schema clean');
+  const { error: cleanupError } = await supabase.from('tracked_products').delete().eq('id', inserted.id);
+  if (cleanupError) {
+    logger.warn('Cleanup failed; remove the test row manually', { error: cleanupError });
+    return;
   }
 
-  console.log('\n[PASS] All checks passed. Supabase is connected and schema is correct.');
+  logger.info('Test row deleted; Supabase schema check passed');
 }
 
-run().catch((err) => {
-  console.error('[FAIL] Unexpected error:', err.message);
-  process.exit(1);
+run().catch((error) => {
+  fail('Unexpected database connection test error', error);
 });

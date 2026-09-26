@@ -1,6 +1,6 @@
 # INE Product Price Tracker
 
-A production-minded web application that tracks product prices and stock levels from the INE mock store. Built as part of the INE Software Engineer Intern assignment.
+A production-minded, shared public dashboard that tracks INE product prices and stock levels. Visitors can search, view the common tracked list, and add a product option; destructive controls are intentionally not public.
 
 ---
 
@@ -24,6 +24,7 @@ scheduler   → cron-job.org (calls POST /internal/scrape every 2 hours)
 - Node.js ≥ 20
 - A [Supabase](https://app.supabase.com) project
 - A [cron-job.org](https://cron-job.org) account (for scheduled scraping)
+- The cron account is only needed when the planned Phase 9 endpoint is added.
 
 ---
 
@@ -56,7 +57,7 @@ npm run dev               # starts on http://localhost:5173
 
 ### 4. Database schema
 
-Run the SQL in `backend/db/schema.sql` in your Supabase SQL editor to create the required tables.
+For a new database, run `backend/db/schema.sql` in the Supabase SQL editor. For the existing Phase 0-5 schema, run `backend/db/migration_harden_scrape_attempts.sql` once after reviewing its duplicate-active-row preflight.
 
 ---
 
@@ -72,6 +73,7 @@ Run the SQL in `backend/db/schema.sql` in your Supabase SQL editor to create the
 | `CRON_SECRET` | Shared secret for authenticating cron-job.org requests |
 | `INE_BASE_URL` | INE mock store base URL (e.g. `https://hire.ine.com`) |
 | `NODE_ENV` | `development` or `production` |
+| `LOG_LEVEL` | Optional: `debug`, `info`, `warn`, `error`, or `silent` |
 
 ### Frontend (`frontend/.env`)
 
@@ -103,25 +105,23 @@ Run the SQL in `backend/db/schema.sql` in your Supabase SQL editor to create the
 
 ---
 
-## Scheduled Scraping
+## Scheduled Scraping (Phase 9 — planned)
 
-Scraping is triggered externally by [cron-job.org](https://cron-job.org) every **2 hours**.
+The external two-hour cron endpoint is intentionally not implemented yet. It will be added in Phase 9 after retry and scrape-persistence work are complete; the application will not use `setInterval` or an in-process scheduler.
 
-The cron job calls:
+The planned cron job calls:
 
 ```
 POST <backend-url>/internal/scrape
 Authorization: Bearer <CRON_SECRET>
 ```
 
-The backend:
+The planned backend flow:
 1. Authenticates the request
 2. Loads all active tracked products
 3. Scrapes each product independently with Playwright
 4. Persists results (success or failure) to Supabase
 5. Returns a run summary
-
-The scraper is **never** triggered by `setInterval` or an in-process scheduler.
 
 ---
 
@@ -133,15 +133,17 @@ The scraper is **never** triggered by `setInterval` or an in-process scheduler.
 
 ## Design Decisions & Trade-offs
 
-> _To be completed after implementation._
+The working design notes are maintained in `design_decisions.txt` and
+`tradeoffs.txt`. Key decisions so far:
 
-### Reliability
-
-> _Describe retry strategy, backoff, failure isolation._
-
-### Why Playwright for prices only
-
-> _Describe why HTTP is used for catalog and Playwright for quotes._
+- The dashboard is shared and public for read/add actions; public destructive
+  actions are deliberately absent.
+- HTTP is used for catalog data, while Playwright is reserved for the protected
+  live quote flow.
+- Scrape-attempt history is append-only and distinguishes `success`, `retried`,
+  and `failed` outcomes.
+- Retry execution and scheduling remain future phases; no in-process scheduler
+  is used.
 
 ### AI Usage Disclosure
 
@@ -162,19 +164,19 @@ The scraper is **never** triggered by `setInterval` or an in-process scheduler.
 
 | Endpoint | Description |
 |---|---|
-| `POST /api/tracked-products` | Start tracking a product option |
-| `GET /api/tracked-products` | List all tracked products |
-| `GET /api/tracked-products/:id` | Get one tracked product |
-| `DELETE /api/tracked-products/:id` | Stop tracking a product |
-| `GET /api/tracked-products/:id/history` | Get scrape history |
-| `GET /api/tracked-products/:id/export` | Download history as CSV |
+| `POST /api/tracked-products` | Public additive action: add a product option to the shared tracker |
+| `GET /api/tracked-products` | List all active shared tracked products |
+| `GET /api/tracked-products/:id` | Get one public tracked product |
+
+History/log views and CSV export are intentionally deferred to Phases 8 and 10. Public stop, delete, edit, reset, and schedule/configuration routes are intentionally absent.
 
 ### Internal
 
 | Endpoint | Description |
 |---|---|
-| `POST /internal/scrape` | Trigger scrape run (cron-authenticated) |
 | `GET /health` | Health check |
+
+`POST /internal/scrape` will be added as a cron-authenticated endpoint in Phase 9.
 
 ---
 

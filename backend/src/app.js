@@ -1,36 +1,34 @@
 import express from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
-import cookieParser from 'cookie-parser';
-import { sessionMiddleware } from './middleware/session.js';
+import { randomUUID } from 'crypto';
 import productsRouter from './routes/products.js';
 import trackedProductsRouter from './routes/trackedProducts.js';
+import { AppError } from './utils/errors.js';
+import { isSensitiveKey, logger, redactSensitiveData } from './utils/logger.js';
 
 const app = express();
+
+// Server-generated correlation ID. We intentionally do not accept a caller's
+// supplied value, which avoids letting one request impersonate another in logs.
+app.use((req, res, next) => {
+  req.requestId = randomUUID();
+  res.setHeader('X-Request-Id', req.requestId);
+  next();
+});
 
 // --- Security middleware ---
 app.use(helmet());
 app.use(
   cors({
     origin: process.env.FRONTEND_URL || 'http://localhost:5173',
-    methods: ['GET', 'POST', 'PATCH', 'DELETE'],
+    methods: ['GET', 'POST'],
     allowedHeaders: ['Content-Type', 'Authorization'],
-    credentials: true, // required for cross-origin cookies
   })
 );
 
-// --- Body and cookie parsing ---
+// --- Body parsing ---
 app.use(express.json());
-app.use(cookieParser());
-
-// --- Anonymous session (applied to all routes except internal/scrape) ---
-// Internal scrape endpoint uses CRON_SECRET auth, not session cookies.
-app.use((req, res, next) => {
-  if (req.path.startsWith('/internal/')) {
-    return next();
-  }
-  return sessionMiddleware(req, res, next);
-});
 
 // --- Health check ---
 app.get('/health', (_req, res) => {
@@ -42,20 +40,69 @@ app.use('/api/products', productsRouter);
 app.use('/api/tracked-products', trackedProductsRouter);
 // TODO (Phase 9): mount internal scrape route
 
-// --- Centralized error handler (must be last middleware) ---
-app.use((err, _req, res, _next) => {
-  const status = err.statusCode || 500;
-  const code = err.code || 'INTERNAL_ERROR';
-  const message = err.message || 'An unexpected error occurred';
+function safeClientDetails(details) {
+  const safeDetails = redactSensitiveData(details);
 
-  // Never expose stack traces in production
-  if (process.env.NODE_ENV !== 'production') {
-    console.error(`[ERROR] ${code}:`, err);
+  return safeDetails.map((detail) => {
+    if (
+      detail &&
+      typeof detail === 'object' &&
+      typeof detail.field === 'string' &&
+      isSensitiveKey(detail.field)
+    ) {
+      return {
+        ...detail,
+        ...(Object.hasOwn(detail, 'value') ? { value: '[REDACTED]' } : {}),
+        ...(Object.hasOwn(detail, 'message') ? { message: '[REDACTED]' } : {}),
+      };
+    }
+    return detail;
+  });
+}
+
+// --- Centralized error handler (must be last middleware) ---
+app.use((err, req, res, _next) => {
+  const isMalformedJson = err instanceof SyntaxError && err.status === 400;
+  const isOperationalError = err instanceof AppError || isMalformedJson;
+  let error;
+
+  if (err instanceof AppError) {
+    error = err;
+  } else if (isMalformedJson) {
+    error = new AppError('VALIDATION_ERROR', 'Request body must contain valid JSON', 400);
   } else {
-    console.error(`[ERROR] ${code}: ${message}`);
+    error = new AppError('INTERNAL_ERROR', 'An unexpected error occurred', 500);
+  }
+  const details = Array.isArray(error.details) ? safeClientDetails(error.details) : [];
+  const context = {
+    requestId: req.requestId,
+    method: req.method,
+    path: req.path,
+    errorCode: error.code,
+    statusCode: error.statusCode,
+  };
+
+  if (isOperationalError) {
+    // Development logs retain operational stacks. Production keeps a causal
+    // stack when one exists, without exposing either stack to API clients.
+    logger.warn('Request failed with an operational error', {
+      ...context,
+      details,
+      ...(process.env.NODE_ENV !== 'production' || err.cause ? { error: err } : {}),
+    });
+  } else {
+    // Unexpected errors retain their redacted stack in server logs, including
+    // production JSON logs, but never cross the API boundary.
+    logger.error('Request failed unexpectedly', { ...context, error: err });
   }
 
-  res.status(status).json({ error: { code, message } });
+  res.status(error.statusCode).json({
+    error: {
+      code: error.code,
+      message: error.message,
+      details,
+    },
+  });
 });
 
 export default app;

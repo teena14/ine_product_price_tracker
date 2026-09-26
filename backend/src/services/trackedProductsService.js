@@ -1,29 +1,26 @@
 import { getProductById } from '../scraper/ineHttpClient.js';
 import {
   createTrackedProduct,
-  deactivateTrackedProduct,
-  getTrackedProductByIdAndSession,
-  listTrackedProductsBySession,
+  getTrackedProductById,
+  listTrackedProducts as listTrackedProductsFromRepository,
 } from '../repositories/trackedProductsRepository.js';
 import { errors } from '../utils/errors.js';
 
 /**
- * Creates a tracked product from an INE product and option selection.
- *
- * Product and option metadata is always retrieved from INE here. The browser
- * only supplies identifiers, so it cannot forge a product name, option name,
- * or URL that gets persisted.
+ * Creates a shared tracking record from authoritative INE metadata. The client
+ * supplies only product and option identifiers; names and URLs are never
+ * trusted from the browser.
  */
-export async function createTrackedProductForSession({ productId, optionId, sessionId }) {
+export async function createTrackedProductFromSelection({ productId, optionId }) {
   let product;
 
   try {
     product = await getProductById(productId);
   } catch (error) {
-    if (error.message?.includes('status 404')) {
+    if (error.status === 404) {
       throw errors.productNotFound(productId);
     }
-    throw error;
+    throw errors.productCatalogUnavailable();
   }
 
   const option = product.options.find((candidate) => candidate.optionId === optionId);
@@ -37,18 +34,13 @@ export async function createTrackedProductForSession({ productId, optionId, sess
     product_name: product.name,
     option_id: option.optionId,
     option_name: option.label,
-    session_id: sessionId,
   });
 }
 
-export function listTrackedProductsForSession(sessionId) {
-  return listTrackedProductsBySession(sessionId);
+export function listTrackedProducts() {
+  return listTrackedProductsFromRepository();
 }
 
-export function getTrackedProductForSession(id, sessionId) {
-  return getTrackedProductByIdAndSession(id, sessionId);
-}
-
-export function deactivateTrackedProductForSession(id, sessionId) {
-  return deactivateTrackedProduct(id, sessionId);
+export function getTrackedProduct(id) {
+  return getTrackedProductById(id);
 }

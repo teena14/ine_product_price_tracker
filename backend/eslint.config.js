@@ -19,6 +19,7 @@ export default [
         URLSearchParams: 'readonly',
         AbortController: 'readonly',
         fetch: 'readonly',
+        document: 'readonly', // evaluated inside Playwright page.waitForFunction callbacks
       },
     },
     rules: {

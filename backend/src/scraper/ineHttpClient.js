@@ -14,11 +14,21 @@
  *   Response: { id, slug, name, brand, category, sku, description,
  *               specs, reviews, optionAxis, options: [{id, label}] }
  *
- * Product URL pattern: /products/:slug
+ * Product URL pattern: /item/:id
  */
 
 const BASE_URL = process.env.INE_BASE_URL || 'https://demo.inelabteamdev.com';
 const REQUEST_TIMEOUT_MS = 10000;
+
+export class IneHttpError extends Error {
+  constructor(code, message, { status, cause } = {}) {
+    super(message, cause ? { cause } : undefined);
+    this.name = 'IneHttpError';
+    this.code = code;
+    this.status = status;
+    Error.captureStackTrace(this, this.constructor);
+  }
+}
 
 /**
  * Fetch with a timeout to avoid hanging indefinitely.
@@ -38,15 +48,22 @@ async function fetchWithTimeout(url, options = {}) {
     });
 
     if (!response.ok) {
-      throw new Error(`INE API responded with status ${response.status} for ${url}`);
+      throw new IneHttpError('INE_HTTP_ERROR', `INE API responded with status ${response.status}`, {
+        status: response.status,
+      });
     }
 
     return response.json();
   } catch (err) {
-    if (err.name === 'AbortError') {
-      throw new Error(`INE API request timed out after ${REQUEST_TIMEOUT_MS}ms: ${url}`);
+    if (err instanceof IneHttpError) {
+      throw err;
     }
-    throw err;
+    if (err.name === 'AbortError') {
+      throw new IneHttpError('INE_HTTP_TIMEOUT', `INE API request timed out after ${REQUEST_TIMEOUT_MS}ms`, {
+        cause: err,
+      });
+    }
+    throw new IneHttpError('INE_NETWORK_ERROR', 'INE API request failed', { cause: err });
   } finally {
     clearTimeout(timer);
   }
@@ -68,7 +85,7 @@ function normalizeProduct(raw) {
     category: raw.category,
     sku: raw.sku,
     description: raw.description,
-    productUrl: `${BASE_URL}/products/${raw.slug}`,
+    productUrl: `${BASE_URL}/item/${raw.id}`,
   };
 }
 
@@ -87,7 +104,7 @@ function normalizeProductDetail(raw) {
     category: raw.category,
     sku: raw.sku,
     description: raw.description,
-    productUrl: `${BASE_URL}/products/${raw.slug}`,
+    productUrl: `${BASE_URL}/item/${raw.id}`,
     specs: raw.specs || {},
     optionAxis: raw.optionAxis || null,
     options: (raw.options || []).map((opt) => ({

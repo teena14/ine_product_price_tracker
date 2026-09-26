@@ -238,7 +238,7 @@ function App() {
         <div className="section-heading">
           <div>
             <h2 id="tracked-products-heading">Tracked products</h2>
-            <p>Only products saved in this browser’s anonymous session appear here.</p>
+            <p>A shared live list visible to every visitor.</p>
           </div>
         </div>
 

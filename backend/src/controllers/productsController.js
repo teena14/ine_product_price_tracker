@@ -1,4 +1,4 @@
-import { searchProducts, getProductById } from '../scraper/ineHttpClient.js';
+import { IneHttpError, searchProducts, getProductById } from '../scraper/ineHttpClient.js';
 import { errors } from '../utils/errors.js';
 
 /**
@@ -18,7 +18,7 @@ export async function handleSearchProducts(req, res, next) {
 
     res.json(result);
   } catch (err) {
-    next(err);
+    next(err instanceof IneHttpError ? errors.productCatalogUnavailable() : err);
   }
 }
 
@@ -44,10 +44,10 @@ export async function handleGetProduct(req, res, next) {
 
     res.json(product);
   } catch (err) {
-    // Map INE API 404/network errors to our error type
-    if (err.message?.includes('status 404')) {
+    // Only a genuine upstream 404 maps to the public not-found response.
+    if (err.status === 404) {
       return next(errors.productNotFound(req.params.productId));
     }
-    next(err);
+    next(err instanceof IneHttpError ? errors.productCatalogUnavailable() : err);
   }
 }

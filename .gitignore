@@ -3,8 +3,8 @@
 .env.local
 .env.*.local
 
-# Prompt file — internal reference only, not part of the codebase
-propmt.txt
+# Local assignment/reference notes — not part of the codebase
+*.txt
 
 # Node dependencies
 node_modules/

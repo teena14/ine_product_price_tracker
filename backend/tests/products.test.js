@@ -80,7 +80,7 @@ describe('GET /api/products/search', () => {
     const first = res.body.products[0];
     expect(first.productId).toBe('2037');
     expect(first.name).toBe('Halvard Headlamp One');
-    expect(first.productUrl).toContain('/products/halvard-headlamp-one');
+    expect(first.productUrl).toContain('/item/2037');
     // Ensure no raw INE fields leak through
     expect(first.id).toBeUndefined();
     expect(first.slug).toBeDefined();
@@ -110,9 +110,13 @@ describe('GET /api/products/search', () => {
 
     const res = await request(app)
       .get('/api/products/search?q=camera')
-      .expect(500);
+      .expect(502);
 
-    expect(res.body.error).toBeDefined();
+    expect(res.body.error).toEqual({
+      code: 'PRODUCT_CATALOG_UNAVAILABLE',
+      message: 'The product catalog is temporarily unavailable',
+      details: [],
+    });
   });
 
   test('handles INE API network error gracefully', async () => {
@@ -123,9 +127,9 @@ describe('GET /api/products/search', () => {
 
     const res = await request(app)
       .get('/api/products/search?q=laptop')
-      .expect(500);
+      .expect(502);
 
-    expect(res.body.error).toBeDefined();
+    expect(res.body.error.code).toBe('PRODUCT_CATALOG_UNAVAILABLE');
   });
 });
 
@@ -145,7 +149,7 @@ describe('GET /api/products/:productId', () => {
     expect(res.body.optionAxis).toBe('Capacity');
     expect(res.body.options).toHaveLength(3);
     expect(res.body.options[0]).toEqual({ optionId: 'o1', label: 'Solo' });
-    expect(res.body.productUrl).toContain('/products/halvard-headlamp-one');
+    expect(res.body.productUrl).toContain('/item/2037');
   });
 
   test('returns 404 when INE returns 404', async () => {
@@ -167,43 +171,5 @@ describe('GET /api/products/:productId', () => {
       .expect(400);
 
     expect(res.body.error.code).toBe('VALIDATION_ERROR');
-  });
-});
-
-describe('Session cookie', () => {
-  test('sets session cookie on first request', async () => {
-    nock(INE_BASE)
-      .get('/api/v2/listings')
-      .query(true)
-      .reply(200, { page: 1, perPage: 20, totalPages: 1, count: 0, results: [] });
-
-    const res = await request(app)
-      .get('/api/products/search?q=test')
-      .expect(200);
-
-    const cookies = res.headers['set-cookie'];
-    expect(cookies).toBeDefined();
-    const sessionCookie = cookies.find((c) => c.startsWith('ine_tracker_session='));
-    expect(sessionCookie).toBeDefined();
-    expect(sessionCookie).toContain('HttpOnly');
-    expect(sessionCookie).toContain('SameSite=Lax');
-  });
-
-  test('does not regenerate session cookie when valid cookie is present', async () => {
-    nock(INE_BASE)
-      .get('/api/v2/listings')
-      .query(true)
-      .reply(200, { page: 1, perPage: 20, totalPages: 1, count: 0, results: [] });
-
-    const fakeSession = 'a'.repeat(64); // 64 hex chars = valid session ID
-    const res = await request(app)
-      .get('/api/products/search?q=test')
-      .set('Cookie', `ine_tracker_session=${fakeSession}`)
-      .expect(200);
-
-    // Should not set a new cookie when a valid one exists
-    const cookies = res.headers['set-cookie'];
-    const sessionCookie = cookies?.find((c) => c.startsWith('ine_tracker_session='));
-    expect(sessionCookie).toBeUndefined();
   });
 });

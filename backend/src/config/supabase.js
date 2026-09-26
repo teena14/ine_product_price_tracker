@@ -1,22 +1,38 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+let supabaseClient;
 
-if (!supabaseUrl || !supabaseKey) {
-  throw new Error(
-    'Missing required environment variables: SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set.'
-  );
+/**
+ * Fails at process start (or first database use) without ever returning the
+ * service-role key to callers. Keeping creation lazy lets HTTP-only unit tests
+ * import the Express app without database credentials.
+ */
+export function validateSupabaseConfig() {
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    throw new Error('Missing required Supabase server configuration.');
+  }
 }
 
 /**
- * Supabase client using the service role key.
- * This bypasses Row Level Security — appropriate for a backend-only service.
- * Never expose this client or key to the frontend.
+ * Backend-only Supabase client. The service role deliberately bypasses RLS;
+ * public access is limited by the Express routes, not by direct DB access.
+ * Never import this client into frontend code or expose its key in an API.
  */
-export const supabase = createClient(supabaseUrl, supabaseKey, {
-  auth: {
-    persistSession: false,
-    autoRefreshToken: false,
-  },
-});
+export function getSupabaseClient() {
+  validateSupabaseConfig();
+
+  if (!supabaseClient) {
+    supabaseClient = createClient(
+      process.env.SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_ROLE_KEY,
+      {
+        auth: {
+          persistSession: false,
+          autoRefreshToken: false,
+        },
+      }
+    );
+  }
+
+  return supabaseClient;
+}
