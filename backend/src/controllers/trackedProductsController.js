@@ -4,6 +4,7 @@ import {
   getTrackedProductHistory,
   listTrackedProducts,
 } from '../services/trackedProductsService.js';
+import { exportTrackedProductHistory } from '../services/scrapeExportService.js';
 import { errors } from '../utils/errors.js';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -60,6 +61,24 @@ export async function handleGetTrackedProductHistory(req, res, next) {
   try {
     const history = await getTrackedProductHistory(getTrackedProductId(req.params.id));
     res.json(history);
+  } catch (error) {
+    next(error);
+  }
+}
+
+/** GET /api/tracked-products/:id/export - public CSV of immutable history. */
+export async function handleExportTrackedProductHistory(req, res, next) {
+  try {
+    const { trackedProduct, csv } = await exportTrackedProductHistory(getTrackedProductId(req.params.id));
+    const filename = `tracked-product-${trackedProduct.id}-scrape-history.csv`;
+
+    res
+      .status(200)
+      .set({
+        'Content-Type': 'text/csv; charset=utf-8',
+        'Content-Disposition': `attachment; filename="${filename}"`,
+      })
+      .send(csv);
   } catch (error) {
     next(error);
   }

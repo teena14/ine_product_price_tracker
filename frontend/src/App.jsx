@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import {
   createTrackedProduct,
+  downloadTrackedProductHistoryCsv,
   getProduct,
   getTrackedProductHistory,
   listTrackedProducts,
@@ -63,6 +64,7 @@ function App() {
     error: '',
   })
   const [historyState, setHistoryState] = useState({ status: 'idle', data: null, error: '' })
+  const [exportState, setExportState] = useState({ status: 'idle', error: '' })
 
   useEffect(() => {
     async function loadTrackedProducts() {
@@ -130,6 +132,7 @@ function App() {
         error: '',
       }))
       setHistoryState({ status: 'idle', data: null, error: '' })
+      setExportState({ status: 'idle', error: '' })
       setTrackingState({ status: 'success', error: '' })
     } catch (error) {
       setTrackingState({ status: 'error', error: error.message })
@@ -138,6 +141,7 @@ function App() {
 
   async function handleShowHistory(trackedProductId) {
     setHistoryState({ status: 'loading', data: null, error: '' })
+    setExportState({ status: 'idle', error: '' })
 
     try {
       const data = await getTrackedProductHistory(trackedProductId)
@@ -149,6 +153,31 @@ function App() {
 
   function handleCloseHistory() {
     setHistoryState({ status: 'idle', data: null, error: '' })
+    setExportState({ status: 'idle', error: '' })
+  }
+
+  async function handleExportHistory() {
+    if (!selectedTrackedProduct) {
+      return
+    }
+
+    setExportState({ status: 'loading', error: '' })
+
+    try {
+      const csv = await downloadTrackedProductHistoryCsv(selectedTrackedProduct.id)
+      const objectUrl = window.URL.createObjectURL(csv)
+      const link = document.createElement('a')
+
+      link.href = objectUrl
+      link.download = `tracked-product-${selectedTrackedProduct.id}-scrape-history.csv`
+      document.body.append(link)
+      link.click()
+      link.remove()
+      window.URL.revokeObjectURL(objectUrl)
+      setExportState({ status: 'success', error: '' })
+    } catch (error) {
+      setExportState({ status: 'error', error: error.message })
+    }
   }
 
   const products = searchState.data?.products ?? []
@@ -360,11 +389,25 @@ function App() {
               <a href={selectedTrackedProduct.product_url} target="_blank" rel="noreferrer">
                 View in store
               </a>
+              <button
+                type="button"
+                className="secondary-button"
+                disabled={exportState.status === 'loading'}
+                onClick={handleExportHistory}
+              >
+                {exportState.status === 'loading' ? 'Preparing CSV…' : 'Export CSV'}
+              </button>
               <button type="button" className="secondary-button" onClick={handleCloseHistory}>
                 Close details
               </button>
             </div>
           </div>
+          {exportState.status === 'success' && (
+            <p className="message success" role="status">CSV download started.</p>
+          )}
+          {exportState.status === 'error' && (
+            <p className="message error" role="alert">{exportState.error}</p>
+          )}
 
           <div className="latest-status-card">
             <div>

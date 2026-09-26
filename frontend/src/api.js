@@ -41,3 +41,22 @@ export function listTrackedProducts() {
 export function getTrackedProductHistory(trackedProductId) {
   return request(`/api/tracked-products/${encodeURIComponent(trackedProductId)}/history`)
 }
+
+export async function downloadTrackedProductHistoryCsv(trackedProductId) {
+  let response
+
+  try {
+    response = await fetch(
+      `${API_BASE_URL}/api/tracked-products/${encodeURIComponent(trackedProductId)}/export`
+    )
+  } catch {
+    throw new Error('Could not reach the API. Check that the backend is running.')
+  }
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => null)
+    throw new Error(body?.error?.message || 'The API could not prepare this CSV export.')
+  }
+
+  return response.blob()
+}

@@ -76,9 +76,8 @@ export async function saveScrapeAttempt(attempt) {
 }
 
 /**
- * This repository intentionally has no HTTP/auth knowledge. A future public
- * history route will first resolve the tracked product and then call this
- * query; Phase 8 will add that route and presentation.
+ * This repository intentionally has no HTTP/auth knowledge. The public
+ * history service resolves the tracked product before calling this query.
  */
 export async function getScrapeHistory(trackedProductId, options = {}) {
   const supabase = getSupabaseClient();
