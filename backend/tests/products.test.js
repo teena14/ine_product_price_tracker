@@ -9,15 +9,16 @@ import 'dotenv/config';
 import request from 'supertest';
 import nock from 'nock';
 import app from '../src/app.js';
+import { resetCatalogCacheForTests } from '../src/scraper/ineHttpClient.js';
 
 const INE_BASE = process.env.INE_BASE_URL || 'https://demo.inelabteamdev.com';
 
 // Sample fixture data matching the real INE API shape
-const MOCK_LISTINGS = {
+const MOCK_LISTINGS_PAGE_ONE = {
   page: 1,
-  perPage: 20,
+  perPage: 2,
   totalPages: 2,
-  count: 40,
+  count: 3,
   results: [
     {
       id: 2037,
@@ -30,12 +31,30 @@ const MOCK_LISTINGS = {
     },
     {
       id: 2081,
-      slug: 'mosella-mirrorless-camera-go',
-      name: 'Mosella Mirrorless Camera Go',
-      brand: 'Mosella',
-      category: 'Cameras',
-      sku: 'SK-2081-MO',
-      description: 'A dependable cameras pick.',
+      slug: 'halvard-headlamp-two',
+      name: 'Halvard Headlamp Two',
+      brand: 'Halvard',
+      category: 'Outdoor',
+      sku: 'SK-2081-HA',
+      description: 'A brighter outdoor pick.',
+    },
+  ],
+};
+
+const MOCK_LISTINGS_PAGE_TWO = {
+  page: 2,
+  perPage: 2,
+  totalPages: 2,
+  count: 3,
+  results: [
+    {
+      id: 2103,
+      slug: 'halvard-headlamp-three',
+      name: 'Halvard Headlamp Three',
+      brand: 'Halvard',
+      category: 'Outdoor',
+      sku: 'SK-2103-HA',
+      description: 'A lightweight outdoor pick.',
     },
   ],
 };
@@ -60,22 +79,35 @@ const MOCK_ITEM_2037 = {
 
 afterEach(() => {
   nock.cleanAll();
+  resetCatalogCacheForTests();
 });
 
+function mockFullCatalog() {
+  nock(INE_BASE)
+    .get('/api/v2/listings')
+    .query({ page: '1' })
+    .reply(200, MOCK_LISTINGS_PAGE_ONE)
+    .get('/api/v2/listings')
+    .query({ page: '2' })
+    .reply(200, MOCK_LISTINGS_PAGE_TWO);
+}
+
 describe('GET /api/products/search', () => {
-  test('returns normalized product list for a valid query', async () => {
-    nock(INE_BASE)
-      .get('/api/v2/listings')
-      .query(true) // match any query string
-      .reply(200, MOCK_LISTINGS);
+  test('filters the complete catalog by normalized product name instead of trusting the upstream count', async () => {
+    mockFullCatalog();
 
     const res = await request(app)
       .get('/api/products/search?q=headlamp')
       .expect(200);
 
     expect(res.body.products).toHaveLength(2);
-    expect(res.body.total).toBe(40);
+    expect(res.body.products.map((product) => product.name)).toEqual([
+      'Halvard Headlamp One',
+      'Halvard Headlamp Two',
+    ]);
+    expect(res.body.total).toBe(3);
     expect(res.body.page).toBe(1);
+    expect(res.body.totalPages).toBe(2);
 
     const first = res.body.products[0];
     expect(first.productId).toBe('2037');
@@ -84,6 +116,32 @@ describe('GET /api/products/search', () => {
     // Ensure no raw INE fields leak through
     expect(first.id).toBeUndefined();
     expect(first.slug).toBeDefined();
+  });
+
+  test('returns the next page from the filtered result set', async () => {
+    mockFullCatalog();
+
+    const res = await request(app)
+      .get('/api/products/search?q=HEADLAMP&page=2')
+      .expect(200);
+
+    expect(res.body).toMatchObject({ total: 3, page: 2, totalPages: 2 });
+    expect(res.body.products).toEqual([
+      expect.objectContaining({ productId: '2103', name: 'Halvard Headlamp Three' }),
+    ]);
+  });
+
+  test('reuses the cached complete catalog for later search terms', async () => {
+    mockFullCatalog();
+
+    await request(app).get('/api/products/search?q=one').expect(200);
+    const secondSearch = await request(app).get('/api/products/search?q=three').expect(200);
+
+    expect(secondSearch.body).toMatchObject({ total: 1, page: 1, totalPages: 1 });
+    expect(secondSearch.body.products).toEqual([
+      expect.objectContaining({ productId: '2103', name: 'Halvard Headlamp Three' }),
+    ]);
+    expect(nock.isDone()).toBe(true);
   });
 
   test('returns 400 when query param q is missing', async () => {
@@ -102,10 +160,18 @@ describe('GET /api/products/search', () => {
     expect(res.body.error.code).toBe('VALIDATION_ERROR');
   });
 
+  test('returns 400 for an invalid search page before loading the catalog', async () => {
+    const res = await request(app)
+      .get('/api/products/search?q=headlamp&page=0')
+      .expect(400);
+
+    expect(res.body.error.code).toBe('VALIDATION_ERROR');
+  });
+
   test('handles INE API 500 error gracefully', async () => {
     nock(INE_BASE)
       .get('/api/v2/listings')
-      .query(true)
+      .query({ page: '1' })
       .reply(500, 'Internal Server Error');
 
     const res = await request(app)
@@ -122,7 +188,7 @@ describe('GET /api/products/search', () => {
   test('handles INE API network error gracefully', async () => {
     nock(INE_BASE)
       .get('/api/v2/listings')
-      .query(true)
+      .query({ page: '1' })
       .replyWithError('ECONNREFUSED');
 
     const res = await request(app)

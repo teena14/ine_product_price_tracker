@@ -18,8 +18,8 @@ async function request(path, options = {}) {
   return body
 }
 
-export function searchProducts(query) {
-  return request(`/api/products/search?q=${encodeURIComponent(query)}`)
+export function searchProducts(query, { page = 1 } = {}) {
+  return request(`/api/products/search?q=${encodeURIComponent(query)}&page=${encodeURIComponent(page)}`)
 }
 
 export function getProduct(productId) {

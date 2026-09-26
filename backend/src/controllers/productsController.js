@@ -13,7 +13,11 @@ export async function handleSearchProducts(req, res, next) {
       throw errors.validationError('Query parameter "q" is required');
     }
 
-    const page = parseInt(req.query.page, 10) || 1;
+    const requestedPage = req.query.page;
+    if (requestedPage !== undefined && !/^[1-9]\d*$/.test(requestedPage)) {
+      throw errors.validationError('Query parameter "page" must be a positive integer');
+    }
+    const page = requestedPage === undefined ? 1 : Number(requestedPage);
     const result = await searchProducts(query, { page });
 
     res.json(result);

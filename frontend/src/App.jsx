@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   createTrackedProduct,
   downloadTrackedProductHistoryCsv,
@@ -52,6 +52,8 @@ function outcomeLabel(outcome) {
   return outcome === 'success' ? 'Success' : outcome === 'retried' ? 'Retried' : 'Failed'
 }
 
+const SEARCH_DEBOUNCE_MS = 250
+
 function App() {
   const [query, setQuery] = useState('')
   const [searchState, setSearchState] = useState({ status: 'idle', data: null, error: '' })
@@ -65,6 +67,8 @@ function App() {
   })
   const [historyState, setHistoryState] = useState({ status: 'idle', data: null, error: '' })
   const [exportState, setExportState] = useState({ status: 'idle', error: '' })
+  const searchRequestId = useRef(0)
+  const searchTimer = useRef()
 
   useEffect(() => {
     async function loadTrackedProducts() {
@@ -79,7 +83,42 @@ function App() {
     loadTrackedProducts()
   }, [])
 
-  async function handleSearch(event) {
+  const runSearch = useCallback(async (searchQuery, page = 1, clearSelection = false) => {
+    const requestId = ++searchRequestId.current
+    setSearchState({ status: 'loading', data: null, error: '' })
+    if (clearSelection) {
+      setDetailState({ status: 'idle', data: null, error: '' })
+      setSelectedOptionId('')
+      setTrackingState({ status: 'idle', error: '' })
+    }
+
+    try {
+      const data = await searchProducts(searchQuery, { page })
+      if (requestId === searchRequestId.current) {
+        setSearchState({ status: 'success', data, error: '' })
+      }
+    } catch (error) {
+      if (requestId === searchRequestId.current) {
+        setSearchState({ status: 'error', data: null, error: error.message })
+      }
+    }
+  }, [])
+
+  useEffect(() => {
+    const searchQuery = query.trim()
+
+    if (!searchQuery) {
+      return undefined
+    }
+
+    searchTimer.current = window.setTimeout(() => {
+      runSearch(searchQuery, 1, true)
+    }, SEARCH_DEBOUNCE_MS)
+
+    return () => window.clearTimeout(searchTimer.current)
+  }, [query, runSearch])
+
+  function handleSearch(event) {
     event.preventDefault()
     const searchQuery = query.trim()
 
@@ -88,16 +127,26 @@ function App() {
       return
     }
 
-    setSearchState({ status: 'loading', data: null, error: '' })
-    setDetailState({ status: 'idle', data: null, error: '' })
-    setSelectedOptionId('')
-    setTrackingState({ status: 'idle', error: '' })
+    window.clearTimeout(searchTimer.current)
+    runSearch(searchQuery, 1, true)
+  }
 
-    try {
-      const data = await searchProducts(searchQuery)
-      setSearchState({ status: 'success', data, error: '' })
-    } catch (error) {
-      setSearchState({ status: 'error', data: null, error: error.message })
+  function handleQueryChange(event) {
+    const nextQuery = event.target.value
+
+    searchRequestId.current += 1
+    if (!nextQuery.trim()) {
+      window.clearTimeout(searchTimer.current)
+      setSearchState({ status: 'idle', data: null, error: '' })
+    }
+    setQuery(nextQuery)
+  }
+
+  function handleSearchPage(page) {
+    const searchQuery = query.trim()
+
+    if (searchQuery) {
+      runSearch(searchQuery, page)
     }
   }
 
@@ -216,7 +265,7 @@ function App() {
             id="product-search"
             type="search"
             value={query}
-            onChange={(event) => setQuery(event.target.value)}
+            onChange={handleQueryChange}
             placeholder="e.g. camera or headlamp"
             autoComplete="off"
           />
@@ -262,6 +311,31 @@ function App() {
                 </li>
               ))}
             </ul>
+          )}
+
+          {searchState.data.totalPages > 1 && (
+            <nav className="pagination" aria-label="Search result pages">
+              <button
+                type="button"
+                className="secondary-button"
+                disabled={searchState.data.page === 1 || searchState.status === 'loading'}
+                onClick={() => handleSearchPage(searchState.data.page - 1)}
+              >
+                Previous
+              </button>
+              <span>Page {searchState.data.page} of {searchState.data.totalPages}</span>
+              <button
+                type="button"
+                className="secondary-button"
+                disabled={
+                  searchState.data.page === searchState.data.totalPages ||
+                  searchState.status === 'loading'
+                }
+                onClick={() => handleSearchPage(searchState.data.page + 1)}
+              >
+                Next
+              </button>
+            </nav>
           )}
         </section>
       )}

@@ -271,6 +271,11 @@ failed attempts. It uses ISO 8601 UTC timestamps and leaves price/stock blank
 for non-success outcomes. Public stop, delete, history edit, reset, and
 schedule/configuration routes are intentionally absent.
 
+Product search filters the catalog by normalized product name as you type and
+shows only matching results. The API pages the filtered matches, and the
+dashboard exposes Previous/Next controls when more than one matching page is
+available.
+
 ### Internal
 
 | Endpoint | Description |

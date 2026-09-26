@@ -171,6 +171,21 @@ button:disabled {
   padding: 5px 10px;
 }
 
+.pagination {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: center;
+  margin-top: 22px;
+}
+
+.pagination span {
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
 .product-list,
 .option-list {
   list-style: none;
