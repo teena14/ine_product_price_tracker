@@ -118,12 +118,12 @@ Run `backend/db/schema.sql` in the Supabase SQL editor to create or update the a
 ## Initial Scrape When Tracking
 
 When a visitor adds a new product option, `POST /api/tracked-products` creates
-the shared tracking record and then runs the normal bounded retry-and-persist
-flow before returning. The dashboard opens the new record's details so the
-first successful price/stock observation, or its retried/failed attempts, is
-visible straight away. A normal scraper failure does not undo tracking: its
-append-only attempt rows remain visible and the next scheduled run can try
-again.
+the shared tracking record and returns immediately. It queues the normal
+bounded retry-and-persist flow in the background, so the initial successful
+price/stock observation, or its retried/failed attempts, appears shortly
+afterwards without making the “Track Product” action wait for Playwright. A
+normal scraper failure does not undo tracking: its append-only attempt rows
+remain visible and the next scheduled run can try again.
 
 ## Manual Scrape Persistence (Phase 7)
 

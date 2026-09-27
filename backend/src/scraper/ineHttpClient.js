@@ -20,12 +20,15 @@
 const BASE_URL = process.env.INE_BASE_URL || 'https://demo.inelabteamdev.com';
 const REQUEST_TIMEOUT_MS = 10000;
 const CATALOG_CACHE_TTL_MS = 5 * 60 * 1000;
+const PRODUCT_DETAIL_CACHE_TTL_MS = 5 * 60 * 1000;
 const CATALOG_PAGE_LIMIT = 60;
+const CATALOG_PAGE_CONCURRENCY = 3;
 const CATALOG_PAGE_MAX_ATTEMPTS = 3;
 const CATALOG_PAGE_RETRY_DELAY_MS = 300;
 
 let catalogCache;
 let catalogLoadPromise;
+const productDetailCache = new Map();
 
 export class IneHttpError extends Error {
   constructor(code, message, { status, cause } = {}) {
@@ -145,15 +148,24 @@ async function fetchCatalogPage(page) {
 }
 
 async function fetchRemainingCatalogPages(totalPages) {
-  const results = [];
+  const pagesToLoad = Math.max(0, totalPages - 1);
+  const results = new Array(pagesToLoad);
+  let nextPage = 2;
 
-  for (let page = 2; page <= totalPages; page += 1) {
-    // The upstream catalog responds with 503 when several pages are requested
-    // at once. A cold cache is deliberately loaded serially; later searches
-    // reuse the short-lived in-process cache without more catalog requests.
-    // This keeps exact local filtering reliable without introducing a queue.
-    results.push(await fetchCatalogPage(page));
+  async function loadNextPages() {
+    while (nextPage <= totalPages) {
+      const page = nextPage;
+      nextPage += 1;
+      results[page - 2] = await fetchCatalogPage(page);
+    }
   }
+
+  // Fetch a small number of pages at once: this removes most first-search
+  // latency without overwhelming INE's deliberately unreliable mock API. A
+  // transient overload is still handled by fetchCatalogPage's retry policy.
+  await Promise.all(
+    Array.from({ length: Math.min(CATALOG_PAGE_CONCURRENCY, pagesToLoad) }, loadNextPages)
+  );
 
   return results;
 }
@@ -192,6 +204,7 @@ async function getCatalog() {
 export function resetCatalogCacheForTests() {
   catalogCache = undefined;
   catalogLoadPromise = undefined;
+  productDetailCache.clear();
 }
 
 /**
@@ -255,8 +268,20 @@ export async function searchProducts(query, options = {}) {
  * @returns {Promise<NormalizedProductDetail>}
  */
 export async function getProductById(productId) {
-  const url = `${BASE_URL}/api/v2/items/${productId}`;
-  const data = await fetchWithTimeout(url);
+  const normalizedProductId = String(productId);
+  const cached = productDetailCache.get(normalizedProductId);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.value;
+  }
 
-  return normalizeProductDetail(data);
+  const url = `${BASE_URL}/api/v2/items/${encodeURIComponent(normalizedProductId)}`;
+  const data = await fetchWithTimeout(url);
+  const product = normalizeProductDetail(data);
+
+  productDetailCache.set(normalizedProductId, {
+    value: product,
+    expiresAt: Date.now() + PRODUCT_DETAIL_CACHE_TTL_MS,
+  });
+
+  return product;
 }

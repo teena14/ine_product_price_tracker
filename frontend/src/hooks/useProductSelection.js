@@ -15,9 +15,9 @@ export function useProductSelection({ onProductTracked } = {}) {
     try {
       const data = await getProduct(productId)
       setDetailState({ status: 'success', data, error: '' })
-      setTimeout(() => {
+      requestAnimationFrame(() => {
         configSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-      }, 50)
+      })
     } catch (error) {
       setDetailState({
         status: 'error',

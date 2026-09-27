@@ -237,6 +237,19 @@ describe('GET /api/products/:productId', () => {
     expect(res.body.productUrl).toContain('/item/2037');
   });
 
+  test('reuses a recent product-detail lookup when tracking validates the selected option', async () => {
+    nock(INE_BASE)
+      .get('/api/v2/items/2037')
+      .query(true)
+      .once()
+      .reply(200, MOCK_ITEM_2037);
+
+    await request(app).get('/api/products/2037').expect(200);
+    await request(app).get('/api/products/2037').expect(200);
+
+    expect(nock.isDone()).toBe(true);
+  });
+
   test('returns 404 when INE returns 404', async () => {
     nock(INE_BASE)
       .get('/api/v2/items/9999')

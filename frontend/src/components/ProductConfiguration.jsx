@@ -22,7 +22,7 @@ export const ProductConfiguration = forwardRef(function ProductConfiguration(
   const selectedOption = selectedProduct?.options?.find((o) => o.optionId === selectedOptionId)
 
   return (
-    <div ref={ref}>
+    <div ref={ref} className="scroll-mt-8">
       {detailState.status === 'loading' && (
         <p className="rounded-[10px] my-5 px-4 py-[13px] bg-brand-info-bg text-brand-info text-sm" role="status">
           Loading product options…

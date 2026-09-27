@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { getProductById } from '../scraper/ineHttpClient.js';
 import {
   createTrackedProduct,
@@ -41,22 +42,50 @@ export async function createTrackedProductFromSelection({ productId, optionId })
 }
 
 /**
- * Creates a shared tracking record and immediately records its first quote.
- * Expected scraper failures are returned by the retry service and persisted
- * as immutable attempts. If persistence itself fails unexpectedly, retain the
- * successfully created tracking record so a visitor is not encouraged to
- * retry the add action and hit the global duplicate constraint.
+ * Starts the first quote scrape after a tracking record is safely saved. This
+ * never blocks the browser's “Track Product” request: the initial price and
+ * scrape log entries arrive shortly afterwards through the normal dashboard
+ * refresh flow. Expected scraper failures are persisted as immutable attempts.
+ */
+export function queueInitialTrackedProductScrape(
+  trackedProduct,
+  {
+    scrapeTrackedProduct = scrapeAndPersistTrackedProduct,
+    createRunId = randomUUID,
+    log = logger,
+  } = {}
+) {
+  const runId = createRunId();
+  const completion = Promise.resolve()
+    .then(() => scrapeTrackedProduct(trackedProduct, { runId }))
+    .catch((error) => {
+      log.error('Initial tracked-product scrape failed unexpectedly', {
+        runId,
+        trackedProductId: trackedProduct.id,
+        productId: trackedProduct.product_id,
+        optionId: trackedProduct.option_id,
+        error,
+      });
+    });
+
+  return { runId, completion };
+}
+
+/**
+ * Creates a shared tracking record, then queues its first quote scrape without
+ * delaying the API response. The persisted record remains available even if
+ * an unexpected scheduling failure occurs.
  */
 export async function createTrackedProductWithInitialScrape(
   { productId, optionId },
-  { scrapeTrackedProduct = scrapeAndPersistTrackedProduct, log = logger } = {}
+  { queueInitialScrape = queueInitialTrackedProductScrape, log = logger } = {}
 ) {
   const trackedProduct = await createTrackedProductFromSelection({ productId, optionId });
 
   try {
-    await scrapeTrackedProduct(trackedProduct);
+    queueInitialScrape(trackedProduct, { log });
   } catch (error) {
-    log.error('Initial tracked-product scrape failed unexpectedly', {
+    log.error('Initial tracked-product scrape could not be queued', {
       trackedProductId: trackedProduct.id,
       productId: trackedProduct.product_id,
       optionId: trackedProduct.option_id,

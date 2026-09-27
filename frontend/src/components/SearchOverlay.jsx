@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { searchProducts } from '../api'
 import { formatProductMeta } from '../utils/formatters'
 
-const SEARCH_DEBOUNCE_MS = 250
+const SEARCH_DEBOUNCE_MS = 150
 
 export function SearchOverlay({ onSelectProduct }) {
   const [query, setQuery] = useState('')
@@ -122,7 +122,9 @@ export function SearchOverlay({ onSelectProduct }) {
           </span>
           <input
             id="product-search-input"
-            type="search"
+            type="text"
+            inputMode="search"
+            enterKeyHint="search"
             value={query}
             onChange={handleInputChange}
             onFocus={() => {
