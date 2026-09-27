@@ -76,11 +76,14 @@ Run `backend/db/schema.sql` in the Supabase SQL editor to create or update the a
 | `PORT` | Port the server listens on (default: 3001) |
 | `SUPABASE_URL` | Your Supabase project URL |
 | `SUPABASE_SERVICE_ROLE_KEY` | Service role key (never expose to frontend) |
-| `TEST_SUPABASE_URL` | URL for a completely separate Supabase test project; used only by `db.integration.test.js` |
-| `TEST_SUPABASE_SERVICE_ROLE_KEY` | Service-role key for that separate test project only |
-| `RUN_DB_TESTS` | Set to `true` only when intentionally running database integration tests (default: `false`) |
 | `CRON_SECRET` | Shared secret for authenticating cron-job.org requests |
-| `INE_BASE_URL` | INE mock store base URL (e.g. `https://hire.ine.com`) |
+| `INE_BASE_URL` | INE mock store base URL (e.g. `https://demo.inelabteamdev.com`) |
+| `SCRAPE_TRACKED_PRODUCT_IDS` | Comma-separated tracked product UUIDs for index-based CLI scraping (`0, 1, 2`) |
+| `SCRAPE_TRACKED_PRODUCT_ID` | Fallback tracked product UUID for manual scraping |
+| `PLAYWRIGHT_HEADLESS` | Set to `false` for headed browser execution with visual cursor (default: `true`) |
+| `TEST_SUPABASE_URL` | URL for a separate Supabase test project; used only by `db.integration.test.js` |
+| `TEST_SUPABASE_SERVICE_ROLE_KEY` | Service-role key for that separate test project only |
+| `RUN_DB_TESTS` | Set to `true` only when running database integration tests (default: `false`) |
 | `NODE_ENV` | `development` or `production` |
 | `LOG_LEVEL` | Optional: `debug`, `info`, `warn`, `error`, or `silent` |
 
@@ -126,31 +129,42 @@ afterwards without making the “Track Product” action wait for Playwright. A
 normal scraper failure does not undo tracking: its append-only attempt rows
 remain visible and the next scheduled run can try again.
 
-## Manual Scrape Persistence (Phase 7)
+## Manual & Observable (Headed) Scraping
 
-To make a deliberate manual scrape against an existing active tracking record,
-set `SCRAPE_TRACKED_PRODUCT_ID` to that record's UUID or pass it directly:
+For testing and evaluator demonstration, the scraper can be run manually in both headless and headed modes. In headed mode (`scrape:headed`), a synthetic red cursor overlay tracks every Playwright pointer movement across the page in real-time, allowing you to observe the human-interaction unlock ritual.
 
-```bash
-npm run scrape:once -- <tracked-product-uuid>
-```
+### Basic Usage
 
-To watch the Playwright browser perform the real storefront interaction on
-your local machine, run:
+You can pass a numeric index (`0`, `1`, `2`) corresponding to the configured `SCRAPE_TRACKED_PRODUCT_IDS` in `.env`, or supply a raw UUID:
 
 ```bash
-npm run scrape:headed -- <tracked-product-uuid>
+# Headless run for product at index 0:
+npm run scrape:once -- 0
+
+# Observable headed run for product at index 0 (opens Chromium):
+npm run scrape:headed -- 0
+
+# Target other products by index:
+npm run scrape:headed -- 1
+npm run scrape:headed -- 2
 ```
 
-This opens a visible Chromium window and must be run from a local desktop
-session; Render's production scraper remains headless. You can also add
-`--headed` to `scrape:once` directly.
+### Demonstrating Slow or Failing Responses (Screen Recording)
 
-The script runs the bounded retry policy and appends one database row for each
-event: `retried` for unsuccessful attempts that will retry, `success` for a
-validated quote, or `failed` for the final failure. It never updates an older
-successful observation. This is a manual tool only; the authenticated cron
-route is a separate operational trigger for deployed scheduled runs.
+To evaluate how the scraper handles slow responses and network degradation without racing against the script, use the built-in throttling and inspection flags:
+
+```bash
+# 1. Automatic Slow 3G Throttling (CDP network emulation, 400ms latency):
+npm run scrape:headed -- 0 --throttle
+
+# 2. Launch with Chrome DevTools already open + 6-second pause to inspect Network:
+npm run scrape:headed -- 0 --devtools
+
+# 3. Add a custom pause before navigation begins:
+npm run scrape:headed -- 0 --pause=10
+```
+
+Each run executes the bounded exponential backoff policy (up to 3 attempts) and appends an immutable database row for every attempt (`retried` on temporary failures, `success` on validated quote, or `failed` on exhausted retries). Price and stock are strictly preserved as `null` on retried/failed rows.
 
 ---
 
@@ -181,7 +195,7 @@ the opted-in suite rather than touching another database.
 
 ---
 
-## Testing and Hardening (Phase 11)
+## Testing and Hardening 
 
 The default backend test suite is deterministic and does not contact Supabase,
 the live INE store, or a real Playwright browser. It covers public API
@@ -197,7 +211,7 @@ this small assignment.
 
 ---
 
-## Scheduled Scraping (Phase 9)
+## Scheduled Scraping 
 
 An external scheduler such as [cron-job.org](https://cron-job.org) should call
 the protected endpoint every **two hours**. The backend does not use
@@ -211,21 +225,14 @@ Authorization: Bearer <CRON_SECRET>
 ```
 
 The backend flow:
-1. Authenticates the request.
-2. Starts one background scrape run and immediately returns `202 Accepted`.
-3. Loads only records whose `tracked_products.active` value is `true`.
-4. Scrapes each active product independently and appends every retry, success,
-   or final failure to `scrape_attempts`.
-5. Updates each successfully scraped product's cached price/stock and every
-   attempted product's `last_scraped_at`, which the dashboard reads.
+1. Authenticates the request via Bearer token (`CRON_SECRET`).
+2. Immediately acknowledges with `HTTP 202 Accepted` (<15ms), completely bypassing **cron-job.org's 30-second HTTP execution timeout**.
+3. Defers the batch scrape to a Node.js background microtask so Render processes all products asynchronously without keeping the HTTP connection open.
+4. An in-process single-flight lock (`already_running`) prevents duplicate or overlapping cron triggers from running concurrent browser instances.
+5. Scrapes each active product serially with Playwright and appends every retry, success, or final failure to `scrape_attempts`.
+6. Updates each successfully scraped product's cached price/stock and stamps `last_scraped_at`, which the dashboard reads.
 
-The acknowledgement contains `{ ok, runId, status }`, where `status` is
-`started` or `already_running`. The latter prevents an overlapping cron
-delivery from creating a duplicate run on the same Render instance. Detailed
-outcomes remain in the append-only scrape log and server logs. An invalid or
-missing `CRON_SECRET` returns `401` and starts no scrape. Configure the cron
-provider manually after deployment with the production Render URL and an
-environment-only secret.
+The immediate acknowledgement payload contains `{ ok, runId, status }`, where `status` is `started` or `already_running`. Detailed outcomes remain in the append-only scrape log and server logs. An invalid or missing `CRON_SECRET` returns `401` and starts no scrape. Configure the cron provider manually after deployment with the production Render URL and an environment-only secret.
 
 ---
 
@@ -253,27 +260,23 @@ non-production, and GitHub Actions must never trigger scheduled scraping.
 
 ---
 
-## Design Decisions & Trade-offs
+## Design Decisions, Trade-offs & AI Usage
 
-The working design notes are maintained in `design_decisions.txt` and
-`tradeoffs.txt`. Key decisions so far:
+A detailed technical design note is provided in [`DESIGN_NOTE.md`](./DESIGN_NOTE.md), covering:
+- **Scraping Reliability:** Manifest-driven dynamic DOM selectors, pointer interaction emulation, retry policy with exponential backoff, cookie consent dismissal, and isolated browser page contexts.
+- **Architectural Trade-offs:**
+  1. *Lightweight HTTP vs. Playwright:* Plain `fetch` handles 90% of requests (catalog/search), reserving headless browser resources strictly for the complex quote workflow.
+  2. *Append-Only History vs. Overwriting:* Every attempt (retried, failed, success) is recorded as an immutable row, preserving an honest audit trail.
+  3. *Serial Execution on Render:* Running products sequentially with browser reuse avoids RAM exhaustion (OOM) on free-tier 512MB hosts.
+  4. *Shared Public Dashboard:* Read and add actions are open without authentication so reviewers can immediately inspect live data; destructive actions (delete, clear) are omitted.
+  5. *Server-Side CSV Generation:* Guarantees UTC timestamps and strict formatting without exposing database credentials to the browser.
+- **AI Tool Mistakes & Corrections:**
+  - *Failure 1 (Static Selectors & Direct API):* AI assumed fixed CSS classes or direct quote API fetch; corrected by dynamically reading `/api/v2/ui/manifest` and simulating native mouse moves.
+  - *Failure 2 (`Number(null) === 0` Price Bug):* AI initialized empty values to 0, corrupting history with `₹0.00`; corrected to strictly persist `null` and render empty strings in CSV.
+  - *Failure 3 (Hardcoded Sleep Delays):* AI used fixed 30s delays; replaced with reactive `waitForFunction` polling that unblocks instantly when the button enables.
+  - *Failure 4 (Bloated Cron Response):* AI returned full attempt arrays, exceeding cron-job.org's payload limit; trimmed response to `{ ok, runId, total, successful, failed }`.
 
-- The dashboard is shared and public for read/add actions; public destructive
-  actions are deliberately absent.
-- HTTP is used for catalog data, while Playwright is reserved for the protected
-  live quote flow.
-- Scrape-attempt history is append-only and distinguishes `success`, `retried`,
-  and `failed` outcomes.
-- Retry events are validated and persisted append-only; an authenticated
-  external cron trigger runs active products without an in-process scheduler.
-- Public product details show the latest attempt, successful price/stock
-  observations, and the full scrape log without exposing history edits.
-- CSV exports are generated by the backend so the browser receives only a
-  public download, not database credentials or direct table access.
-
-### AI Usage Disclosure
-
-> _Disclose AI assistance and any corrections made._
+See [`DESIGN_NOTE.md`](./DESIGN_NOTE.md) for full architectural explanations.
 
 ---
 

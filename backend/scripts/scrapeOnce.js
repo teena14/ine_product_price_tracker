@@ -65,10 +65,29 @@ function logResult(result) {
 
 const argumentsWithoutNode = process.argv.slice(2);
 const headed = argumentsWithoutNode.includes('--headed');
-const positionalArguments = argumentsWithoutNode.filter((argument) => argument !== '--headed');
+const devtools = argumentsWithoutNode.includes('--devtools');
+const throttle = argumentsWithoutNode.includes('--throttle') || argumentsWithoutNode.includes('--slow');
+const pauseArg = argumentsWithoutNode.find((argument) => argument.startsWith('--pause'));
+const positionalArguments = argumentsWithoutNode.filter((argument) => !argument.startsWith('--'));
 
-if (headed) {
+if (headed || devtools || throttle || pauseArg) {
   process.env.PLAYWRIGHT_HEADLESS = 'false';
+}
+
+if (devtools) {
+  process.env.PLAYWRIGHT_DEVTOOLS = 'true';
+}
+
+if (throttle) {
+  process.env.PLAYWRIGHT_THROTTLE_3G = 'true';
+}
+
+if (pauseArg || devtools) {
+  let pauseSec = 6;
+  if (pauseArg && pauseArg.includes('=')) {
+    pauseSec = Number(pauseArg.split('=')[1]) || 6;
+  }
+  process.env.PLAYWRIGHT_START_PAUSE_MS = String(pauseSec * 1000);
 }
 
 // Build the ID array from SCRAPE_TRACKED_PRODUCT_IDS (comma-separated in .env).

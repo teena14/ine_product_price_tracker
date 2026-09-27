@@ -110,7 +110,12 @@ export function validateQuote(quote) {
 
 async function getBrowser() {
   if (!browserPromise) {
-    browserPromise = chromium.launch({ headless: process.env.PLAYWRIGHT_HEADLESS !== 'false' });
+    const isHeadless = process.env.PLAYWRIGHT_HEADLESS !== 'false';
+    const openDevtools = !isHeadless && process.env.PLAYWRIGHT_DEVTOOLS === 'true';
+    browserPromise = chromium.launch({
+      headless: isHeadless,
+      devtools: openDevtools,
+    });
   }
 
   try {
@@ -268,29 +273,52 @@ async function satisfyPriceInteraction(page) {
   const priceControl = panel.locator('button.ctl-main');
 
   for (let startAttempt = 1; startAttempt <= QUOTE_START_MAX_ATTEMPTS; startAttempt += 1) {
-    // The mock store requires several distinct mouse moves and a dwell period.
-    // Hover the disabled Check price control only after completing that motion.
-    // If the store enables it slowly, retry this same-page interaction rather
-    // than closing the page and starting the full product scrape again.
-    for (let step = 0; step < MIN_POINTER_MOVES; step += 1) {
-      await page.mouse.move(box.x + 16 + step * 12, box.y + 16 + (step % 3) * 8);
-      await page.waitForTimeout(POINTER_MOVE_DELAY_MS);
-    }
-    await priceControl.hover({ timeout: NAVIGATION_TIMEOUT_MS });
+    // Skip the mouse-move ritual if the button is already enabled — no need
+    // to burn time on moves the store already rewarded on a prior interaction.
+    const alreadyEnabled =
+      typeof page.evaluate === 'function'
+        ? await page.evaluate(() => {
+            const button = document.querySelector('.offer-panel button.ctl-main');
+            return Boolean(button && !button.disabled);
+          })
+        : false;
 
-    try {
-      await page.waitForFunction(
-        () => {
-          const button = document.querySelector('.offer-panel button.ctl-main');
-          return Boolean(button && !button.disabled);
-        },
-        { timeout: CHECK_PRICE_ENABLE_TIMEOUT_MS }
-      );
-    } catch (error) {
-      if (error.name === 'TimeoutError' && startAttempt < QUOTE_START_MAX_ATTEMPTS) {
-        continue;
+    if (!alreadyEnabled) {
+      // The mock store requires several distinct mouse moves and a dwell period.
+      // Hover the disabled Check price control only after completing that motion.
+      // If the store enables it slowly, retry this same-page interaction rather
+      // than closing the page and starting the full product scrape again.
+      for (let step = 0; step < MIN_POINTER_MOVES; step += 1) {
+        await page.mouse.move(box.x + 16 + step * 12, box.y + 16 + (step % 3) * 8);
+        await page.waitForTimeout(POINTER_MOVE_DELAY_MS);
+        // If the store enables the button mid-loop, stop moving immediately.
+        const enabledEarly =
+          typeof page.evaluate === 'function'
+            ? await page.evaluate(() => {
+                const button = document.querySelector('.offer-panel button.ctl-main');
+                return Boolean(button && !button.disabled);
+              })
+            : false;
+        if (enabledEarly) {
+          break;
+        }
       }
-      throw error;
+      await priceControl.hover({ timeout: NAVIGATION_TIMEOUT_MS });
+
+      try {
+        await page.waitForFunction(
+          () => {
+            const button = document.querySelector('.offer-panel button.ctl-main');
+            return Boolean(button && !button.disabled);
+          },
+          { timeout: CHECK_PRICE_ENABLE_TIMEOUT_MS }
+        );
+      } catch (error) {
+        if (error.name === 'TimeoutError' && startAttempt < QUOTE_START_MAX_ATTEMPTS) {
+          continue;
+        }
+        throw error;
+      }
     }
 
     await priceControl.click({ timeout: CHECK_PRICE_CLICK_TIMEOUT_MS });
@@ -337,6 +365,63 @@ async function waitForQuote(page) {
 }
 
 /**
+ * Injects a small red-dot overlay into the page so the synthetic Playwright
+ * cursor is visible when running in headed mode. Playwright dispatches real
+ * DOM `mousemove` events, so the overlay tracks every `page.mouse.move` call.
+ * No-ops in headless mode so production behaviour is unchanged.
+ */
+async function injectVisibleCursor(page) {
+  if (process.env.PLAYWRIGHT_HEADLESS !== 'false') {
+    return;
+  }
+
+  // addInitScript runs before any page JS on every navigation, ensuring the
+  // dot is present from the first paint and survives client-side route changes.
+  await page.addInitScript(() => {
+    /* global window */
+    function mountCursor() {
+      if (document.getElementById('__scraper_cursor__')) {
+        return;
+      }
+      const dot = document.createElement('div');
+      dot.id = '__scraper_cursor__';
+      // Start at viewport centre so the dot is visible before any mouse move.
+      const cx = Math.round(window.innerWidth / 2);
+      const cy = Math.round(window.innerHeight / 2);
+      // Inline every style as !important so the page's own CSS can't hide it.
+      dot.setAttribute('style', [
+        'position:fixed !important',
+        `top:${cy}px !important`,
+        `left:${cx}px !important`,
+        'width:18px !important',
+        'height:18px !important',
+        'background:rgba(220,38,38,0.9) !important',
+        'border:2.5px solid #fff !important',
+        'border-radius:50% !important',
+        'pointer-events:none !important',
+        'z-index:2147483647 !important',
+        'transform:translate(-50%,-50%) !important',
+        'box-shadow:0 0 0 3px rgba(220,38,38,0.35) !important',
+        'display:block !important',
+        'visibility:visible !important',
+        'opacity:1 !important',
+      ].join(';'));
+      (document.body || document.documentElement).appendChild(dot);
+      document.addEventListener('mousemove', (e) => {
+        dot.style.setProperty('left', `${e.clientX}px`, 'important');
+        dot.style.setProperty('top', `${e.clientY}px`, 'important');
+      });
+    }
+    // Mount immediately if body is ready, otherwise wait for it.
+    if (document.body) {
+      mountCursor();
+    } else {
+      document.addEventListener('DOMContentLoaded', mountCursor, { once: true });
+    }
+  });
+}
+
+/**
  * Uses the browser-only INE quote flow and returns normalized, validated data.
  * The page is isolated per product, while the browser process is reused across
  * calls to keep scheduled runs efficient.
@@ -348,6 +433,29 @@ export async function scrapeCurrentQuote({ productId, optionId }) {
     const browser = await getBrowser();
     page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
     page.setDefaultTimeout(NAVIGATION_TIMEOUT_MS);
+    await injectVisibleCursor(page);
+
+    if (process.env.PLAYWRIGHT_HEADLESS === 'false' && process.env.PLAYWRIGHT_THROTTLE_3G === 'true') {
+      try {
+        if (typeof page.context?.().newCDPSession === 'function') {
+          const client = await page.context().newCDPSession(page);
+          await client.send('Network.enable');
+          await client.send('Network.emulateNetworkConditions', {
+            offline: false,
+            latency: 400,
+            downloadThroughput: Math.round((400 * 1024) / 8),
+            uploadThroughput: Math.round((400 * 1024) / 8),
+          });
+        }
+      } catch {
+        // Non-fatal if CDP session is unsupported
+      }
+    }
+
+    if (process.env.PLAYWRIGHT_HEADLESS === 'false' && process.env.PLAYWRIGHT_START_PAUSE_MS) {
+      const pauseMs = Number(process.env.PLAYWRIGHT_START_PAUSE_MS) || 6000;
+      await page.waitForTimeout(pauseMs);
+    }
 
     const uiManifest = await navigateToProductAndLoadUiManifest(page, productId);
     await dismissCookieConsent(page, COOKIE_CONSENT_TIMEOUT_MS);
