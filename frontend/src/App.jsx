@@ -47,7 +47,7 @@ export default function App() {
   }
 
   return (
-    <main className="w-[min(100%-32px,960px)] mx-auto pt-10 sm:pt-16 pb-20">
+    <main className="w-[min(100%-32px,960px)] mx-auto pt-5 sm:pt-12 pb-20">
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <header className="flex items-start justify-between gap-4 mb-8 sm:mb-12">
         <div className="max-w-[640px]">

@@ -28,7 +28,7 @@ const TRACKING_REFRESH_INTERVAL_MS = 60_000
 
 // ─── Shared layout primitives ─────────────────────────────────────────────────
 
-const PAGE_CLASS = 'w-[min(100%-32px,960px)] mx-auto pt-10 sm:pt-16 pb-20'
+const PAGE_CLASS = 'w-[min(100%-32px,960px)] mx-auto pt-5 sm:pt-8 pb-20'
 
 const BACK_LINK_CLASS =
   'text-brand-accent-strong inline-block text-[0.9rem] font-semibold mb-7 no-underline hover:underline focus-visible:outline-3 focus-visible:outline-brand-focus focus-visible:outline-offset-2'
@@ -41,7 +41,7 @@ const BADGE_CLASS =
 
 const STATUS_BADGE_CLASS = {
   success: 'bg-brand-success-bg text-brand-success',
-  failed:  'bg-brand-error-bg text-brand-error',
+  failed: 'bg-brand-error-bg text-brand-error',
   retried: 'bg-brand-info-bg text-brand-info',
 }
 
@@ -90,6 +90,7 @@ export function TrackPage() {
   })
   const [advancedOpen, setAdvancedOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [historyOpen, setHistoryOpen] = useState(false)
   const [productAlerts, setProductAlerts] = useState([])
   // Local override after frequency save so next_scrape_at shows immediately
   const [frequencyOverride, setFrequencyOverride] = useState(null)
@@ -173,7 +174,7 @@ export function TrackPage() {
           })
           void getTrackedProductAlerts(productId)
             .then((alertsData) => setProductAlerts(alertsData.alerts ?? []))
-            .catch(() => {})
+            .catch(() => { })
           return
         }
       } catch (error) {
@@ -361,13 +362,12 @@ export function TrackPage() {
               <span className="text-brand-heading text-[1.15rem] font-bold">{formatPrice(currentPrice)}</span>
               {priceChange !== null && (
                 <span
-                  className={`text-[0.82rem] font-semibold px-2 py-[3px] rounded-full w-fit ${
-                    priceChange < 0
-                      ? 'bg-brand-success-bg text-brand-success'
-                      : priceChange > 0
-                        ? 'bg-brand-error-bg text-brand-error'
-                        : 'bg-brand-subtle text-brand-muted'
-                  }`}
+                  className={`text-[0.82rem] font-semibold px-2 py-[3px] rounded-full w-fit ${priceChange < 0
+                    ? 'bg-brand-success-bg text-brand-success'
+                    : priceChange > 0
+                      ? 'bg-brand-error-bg text-brand-error'
+                      : 'bg-brand-subtle text-brand-muted'
+                    }`}
                 >
                   {priceChange === 0
                     ? 'No change'
@@ -413,9 +413,8 @@ export function TrackPage() {
         <StatusCard label="Tracking Status">
           <span className="text-brand-heading text-[1.15rem] font-bold">
             <span
-              className={`${BADGE_CLASS} ${
-                trackedProduct.active ? 'bg-brand-success-bg text-brand-success' : 'bg-brand-subtle text-brand-muted'
-              }`}
+              className={`${BADGE_CLASS} ${trackedProduct.active ? 'bg-brand-success-bg text-brand-success' : 'bg-brand-subtle text-brand-muted'
+                }`}
             >
               {trackedProduct.active ? 'Active' : 'Paused'}
             </span>
@@ -464,8 +463,8 @@ export function TrackPage() {
                 <span className="text-base mt-0.5 shrink-0">
                   {alert.alert_type === 'price_drop' ? '📉'
                     : alert.alert_type === 'back_in_stock' ? '✅'
-                    : alert.alert_type === 'out_of_stock' ? '❌'
-                    : '⚠️'}
+                      : alert.alert_type === 'out_of_stock' ? '❌'
+                        : '⚠️'}
                 </span>
                 <div className="flex-1 min-w-0">
                   <p className="text-brand-text text-sm m-0">{alert.message}</p>
@@ -485,11 +484,11 @@ export function TrackPage() {
         className="border border-brand-border rounded-2xl bg-brand-surface shadow-[0_2px_8px_rgb(25_39_52/0.04)] mt-6 p-5 sm:p-7"
         aria-labelledby="history-heading"
       >
-        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <h2 id="history-heading" className="text-xl font-bold tracking-[-0.02em] text-brand-heading mb-1">
             Price &amp; Stock History
           </h2>
-          <div className="flex items-center gap-2.5 shrink-0 self-start sm:self-auto">
+          <div className="flex items-center gap-2 shrink-0 self-start sm:self-auto">
             <span className="bg-brand-accent-soft text-brand-accent-strong rounded-full text-[0.75rem] font-bold px-[9px] py-1 text-center whitespace-nowrap">
               {successfulAttempts.length} observation{successfulAttempts.length === 1 ? '' : 's'}
             </span>
@@ -501,6 +500,16 @@ export function TrackPage() {
             >
               {exportState.status === 'loading' ? 'Preparing CSV…' : 'Export CSV'}
             </button>
+            <button
+              type="button"
+              aria-expanded={historyOpen}
+              aria-controls="history-panel"
+              onClick={() => setHistoryOpen((v) => !v)}
+              className="bg-transparent border-0 p-1 cursor-pointer text-brand-muted hover:text-brand-accent-strong transition-colors text-[0.75rem] leading-none focus-visible:outline-3 focus-visible:outline-brand-focus focus-visible:outline-offset-2"
+              aria-label={historyOpen ? 'Collapse history' : 'Expand history'}
+            >
+              {historyOpen ? '▲' : '▼'}
+            </button>
           </div>
         </div>
 
@@ -510,34 +519,38 @@ export function TrackPage() {
           </p>
         )}
 
-        {successfulAttempts.length === 0 ? (
-          <EmptyState title="No price observations yet">
-            No successful scrape has been recorded yet.
-            {latestAttempt && latestAttempt.outcome !== 'success'
-              ? ' The last check failed — see the Advanced Details below.'
-              : ' The first scheduled or manual scrape will appear here.'}
-          </EmptyState>
-        ) : (
-          <div className="border border-brand-border rounded-[10px] overflow-x-auto">
-            <table className="w-full min-w-[500px] border-collapse text-left">
-              <caption className="sr-only">Price and stock history</caption>
-              <thead>
-                <tr>
-                  <th scope="col" className={TH_CLASS}>Timestamp</th>
-                  <th scope="col" className={TH_CLASS}>Price</th>
-                  <th scope="col" className={TH_CLASS}>Stock</th>
-                </tr>
-              </thead>
-              <tbody>
-                {[...successfulAttempts].reverse().map((attempt) => (
-                  <tr key={attempt.id}>
-                    <td className={TD_CLASS}>{formatTimestamp(attempt.scraped_at)}</td>
-                    <td className={TD_CLASS}>{formatPrice(attempt.price)}</td>
-                    <td className={TD_CLASS}>{formatStock(attempt.stock)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+        {historyOpen && (
+          <div id="history-panel" className="mt-4">
+            {successfulAttempts.length === 0 ? (
+              <EmptyState title="No price observations yet">
+                No successful scrape has been recorded yet.
+                {latestAttempt && latestAttempt.outcome !== 'success'
+                  ? ' The last check failed — see the Advanced Details below.'
+                  : ' The first scheduled or manual scrape will appear here.'}
+              </EmptyState>
+            ) : (
+              <div className="border border-brand-border rounded-[10px] overflow-x-auto ">
+                <table className="w-full min-w-[500px] border-collapse text-left">
+                  <caption className="sr-only">Price and stock history</caption>
+                  <thead>
+                    <tr>
+                      <th scope="col" className={TH_CLASS}>Timestamp</th>
+                      <th scope="col" className={TH_CLASS}>Price</th>
+                      <th scope="col" className={TH_CLASS}>Stock</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[...successfulAttempts].reverse().map((attempt) => (
+                      <tr key={attempt.id}>
+                        <td className={TD_CLASS}>{formatTimestamp(attempt.scraped_at)}</td>
+                        <td className={TD_CLASS}>{formatPrice(attempt.price)}</td>
+                        <td className={TD_CLASS}>{formatStock(attempt.stock)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         )}
       </section>
