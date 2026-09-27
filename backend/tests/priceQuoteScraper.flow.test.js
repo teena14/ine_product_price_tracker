@@ -25,7 +25,7 @@ function createTimeoutError() {
   return error;
 }
 
-function createPage({ gotoError, offerFailed = false, ignoredStartClicks = 0 } = {}) {
+function createPage({ gotoError, offerFailed = false, ignoredStartClicks = 0, cookieConsent = false } = {}) {
   const uiManifest = {
     priceTag: 'strong',
     classes: { priceValue: 'amt-h8' },
@@ -44,6 +44,15 @@ function createPage({ gotoError, offerFailed = false, ignoredStartClicks = 0 } =
     click: jest.fn().mockResolvedValue(),
   };
   const priceControl = { click: jest.fn().mockResolvedValue() };
+  let cookieConsentVisible = cookieConsent;
+  const cookieConsentButton = {
+    first: jest.fn(),
+    isVisible: jest.fn().mockImplementation(() => Promise.resolve(cookieConsentVisible)),
+    click: jest.fn().mockImplementation(async () => {
+      cookieConsentVisible = false;
+    }),
+  };
+  cookieConsentButton.first.mockReturnValue(cookieConsentButton);
   const panel = {
     waitFor: jest.fn().mockResolvedValue(),
     boundingBox: jest.fn().mockResolvedValue({ x: 100, y: 200 }),
@@ -57,6 +66,7 @@ function createPage({ gotoError, offerFailed = false, ignoredStartClicks = 0 } =
   const page = {
     close: jest.fn().mockResolvedValue(),
     goto: gotoError ? jest.fn().mockRejectedValue(gotoError) : jest.fn().mockResolvedValue(),
+    getByRole: jest.fn().mockReturnValue(cookieConsentButton),
     locator: jest.fn((selector) => {
       if (selector === '.opt-picker') {
         return picker;
@@ -93,7 +103,7 @@ function createPage({ gotoError, offerFailed = false, ignoredStartClicks = 0 } =
     waitForTimeout: jest.fn().mockResolvedValue(),
   };
 
-  return { optionButton, page, panel, priceControl };
+  return { cookieConsentButton, optionButton, page, panel, priceControl };
 }
 
 function configureBrowser(page) {
@@ -143,6 +153,19 @@ describe('Playwright quote workflow', () => {
 
     await closeQuoteScraperBrowser();
     expect(browser.close).toHaveBeenCalledTimes(1);
+  });
+
+  test('dismisses an early cookie-consent prompt before interacting with the price panel', async () => {
+    const { cookieConsentButton, page } = createPage({ cookieConsent: true });
+    configureBrowser(page);
+
+    await expect(scrapeCurrentQuote({ productId: '2037', optionId: 'o2' })).resolves.toEqual({
+      price: 18145.5,
+      stock: 12,
+    });
+
+    expect(cookieConsentButton.click).toHaveBeenCalledTimes(1);
+    expect(cookieConsentButton.click).toHaveBeenCalledWith({ timeout: 2_000 });
   });
 
   test('maps browser navigation timeouts and still closes the page', async () => {

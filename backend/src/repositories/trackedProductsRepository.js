@@ -112,7 +112,7 @@ export async function updateTrackedProductLastScrape(id, { price, stock, scraped
   const patch = { last_scraped_at: scrapedAt ?? new Date().toISOString() };
 
   // Only overwrite price/stock on a successful scrape (both must be present)
-  if (price != null && stock != null) {
+  if (price !== null && price !== undefined && stock !== null && stock !== undefined) {
     patch.last_price = price;
     patch.last_stock = stock;
   }
@@ -130,4 +130,3 @@ export async function updateTrackedProductLastScrape(id, { price, stock, scraped
 
   return data;
 }
-

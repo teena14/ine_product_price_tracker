@@ -7,11 +7,18 @@ const NAVIGATION_TIMEOUT_MS = 20_000;
 const QUOTE_TIMEOUT_MS = 35_000;
 const QUOTE_START_TIMEOUT_MS = 2_000;
 const QUOTE_START_MAX_ATTEMPTS = 5;
+const COOKIE_CONSENT_TIMEOUT_MS = 2_000;
+const LATE_COOKIE_CONSENT_TIMEOUT_MS = 500;
+const COOKIE_CONSENT_CLICK_TIMEOUT_MS = 2_000;
 const MIN_POINTER_MOVES = 10;
 const POINTER_MOVE_DELAY_MS = 75;
 const UI_MANIFEST_PATH = '/api/v2/ui/manifest';
 const SAFE_HTML_TAG = /^[a-z][a-z0-9-]*$/i;
 const SAFE_CLASS_TOKEN = /^[a-z_-][a-z0-9_-]*$/i;
+const COOKIE_CONSENT_BUTTON_NAMES = Object.freeze([
+  /^(?:reject|reject all|decline|decline all|necessary only|no thanks)$/i,
+  /^(?:accept|accept all|allow all|agree|i agree|ok)$/i,
+]);
 
 let browserPromise;
 
@@ -198,6 +205,36 @@ async function navigateToProductAndLoadUiManifest(page, productId) {
   return manifest.json();
 }
 
+/**
+ * The store may show a cookie-consent prompt shortly after navigation. Check
+ * for its explicit button labels in parallel, so a normal run without a
+ * banner incurs only one short bounded wait. Rejecting is preferred when the
+ * banner offers both choices; accepting remains a fallback for banners that
+ * expose only that action.
+ */
+async function dismissCookieConsent(page, timeoutMs) {
+  const candidates = COOKIE_CONSENT_BUTTON_NAMES.map((name) =>
+    page.getByRole('button', { name }).first()
+  );
+  const visibility = await Promise.all(
+    candidates.map(async (button) => {
+      try {
+        return (await button.isVisible({ timeout: timeoutMs })) ? button : null;
+      } catch {
+        return null;
+      }
+    })
+  );
+  const button = visibility.find(Boolean);
+
+  if (!button) {
+    return false;
+  }
+
+  await button.click({ timeout: COOKIE_CONSENT_CLICK_TIMEOUT_MS });
+  return true;
+}
+
 async function selectOption(page, productId, optionId) {
   const product = await getProductById(productId);
   const option = product.options.find((candidate) => candidate.optionId === optionId);
@@ -301,7 +338,12 @@ export async function scrapeCurrentQuote({ productId, optionId }) {
     page.setDefaultTimeout(NAVIGATION_TIMEOUT_MS);
 
     const uiManifest = await navigateToProductAndLoadUiManifest(page, productId);
+    await dismissCookieConsent(page, COOKIE_CONSENT_TIMEOUT_MS);
     await selectOption(page, productId, optionId);
+    // A delayed consent prompt can otherwise obstruct the required trusted
+    // click. This short second check covers banners that arrive after the
+    // initial page load without adding a long delay to normal runs.
+    await dismissCookieConsent(page, LATE_COOKIE_CONSENT_TIMEOUT_MS);
     await satisfyPriceInteraction(page);
     await waitForQuote(page);
 

@@ -3,6 +3,7 @@
  *
  * Usage:
  *   npm run scrape:once -- <trackedProductId>
+ *   npm run scrape:headed -- <trackedProductId>
  *
  * Set SCRAPE_TRACKED_PRODUCT_ID in backend/.env, or pass an existing tracked
  * product UUID. Every retry event is persisted as its own scrape_attempt row.
@@ -14,7 +15,15 @@ import { closeQuoteScraperBrowser } from '../src/scraper/priceQuoteScraper.js';
 import { scrapeAndPersistTrackedProduct } from '../src/services/scrapePersistenceService.js';
 import { logger } from '../src/utils/logger.js';
 
-const [trackedProductId = process.env.SCRAPE_TRACKED_PRODUCT_ID] = process.argv.slice(2);
+const argumentsWithoutNode = process.argv.slice(2);
+const headed = argumentsWithoutNode.includes('--headed');
+const positionalArguments = argumentsWithoutNode.filter((argument) => argument !== '--headed');
+
+if (headed) {
+  process.env.PLAYWRIGHT_HEADLESS = 'false';
+}
+
+const [trackedProductId = process.env.SCRAPE_TRACKED_PRODUCT_ID] = positionalArguments;
 
 if (!trackedProductId) {
   logger.error('Manual scrape requires an existing tracked product ID');
@@ -26,6 +35,10 @@ if (!trackedProductId) {
       throw new Error('Manual scrape requires an active tracked product');
     }
 
+    logger.info('Manual scrape started', {
+      trackedProductId: trackedProduct.id,
+      browserMode: headed ? 'headed' : 'headless',
+    });
     const result = await scrapeAndPersistTrackedProduct(trackedProduct);
     const context = {
       trackedProductId: trackedProduct.id,

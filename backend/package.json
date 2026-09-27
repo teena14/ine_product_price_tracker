@@ -14,7 +14,8 @@
     "test:coverage": "node --experimental-vm-modules node_modules/jest/bin/jest.js --runInBand --coverage",
     "lint": "eslint \"src/**/*.js\" \"tests/**/*.js\" --no-error-on-unmatched-pattern",
     "lint:fix": "eslint \"src/**/*.js\" \"tests/**/*.js\" --fix --no-error-on-unmatched-pattern",
-    "scrape:once": "node scripts/scrapeOnce.js"
+    "scrape:once": "node scripts/scrapeOnce.js",
+    "scrape:headed": "node scripts/scrapeOnce.js --headed"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.49.4",

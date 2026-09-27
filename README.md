@@ -104,6 +104,7 @@ Run `backend/db/schema.sql` in the Supabase SQL editor to create or update the a
 | `npm run test:coverage` | Run the default test suite with a coverage report |
 | `npm run lint` | Run ESLint |
 | `npm run scrape:once` | Manually scrape and persist one existing tracked product with bounded retries |
+| `npm run scrape:headed` | Run the same manual scrape with a visible Playwright browser |
 
 ### Frontend
 
@@ -133,6 +134,17 @@ set `SCRAPE_TRACKED_PRODUCT_ID` to that record's UUID or pass it directly:
 ```bash
 npm run scrape:once -- <tracked-product-uuid>
 ```
+
+To watch the Playwright browser perform the real storefront interaction on
+your local machine, run:
+
+```bash
+npm run scrape:headed -- <tracked-product-uuid>
+```
+
+This opens a visible Chromium window and must be run from a local desktop
+session; Render's production scraper remains headless. You can also add
+`--headed` to `scrape:once` directly.
 
 The script runs the bounded retry policy and appends one database row for each
 event: `retried` for unsuccessful attempts that will retry, `success` for a
