@@ -26,30 +26,28 @@ export function TrackedCard({ product }) {
 
             {isAvailable !== null && (
               <span
-                className={`rounded-full inline-block text-[0.75rem] font-bold px-[9px] py-1 text-center whitespace-nowrap ${
-                  isAvailable ? 'bg-brand-success-bg text-brand-success' : 'bg-brand-error-bg text-brand-error'
-                }`}
+                className={`rounded-full inline-block text-[0.75rem] font-bold px-[9px] py-1 text-center whitespace-nowrap ${isAvailable ? 'bg-brand-success-bg text-brand-success' : 'bg-brand-error-bg text-brand-error'
+                  }`}
               >
                 {isAvailable ? 'In stock' : 'Out of stock'}
               </span>
             )}
 
             <span
-              className={`rounded-full inline-block text-[0.75rem] font-bold px-[9px] py-1 text-center whitespace-nowrap ${
-                product.active ? 'bg-brand-success-bg text-brand-success' : 'bg-brand-subtle text-brand-muted'
-              }`}
+              className={`rounded-full inline-block text-[0.75rem] font-bold px-[9px] py-1 text-center whitespace-nowrap ${product.active ? 'bg-brand-success-bg text-brand-success' : 'bg-brand-subtle text-brand-muted'
+                }`}
             >
               {product.active ? 'Active' : 'Paused'}
             </span>
           </div>
 
-          <span className="text-brand-accent-strong text-[0.85rem] font-semibold">View Tracking →</span>
         </div>
       </div>
 
       {lastChecked && (
-        <div className="border-t border-brand-border pt-2.5 mt-2.5">
+        <div className="border-t border-brand-border pt-2.5 mt-2.5 flex items-center justify-between">
           <span className="text-brand-muted text-[0.8rem]">Checked {formatRelativeTime(lastChecked)}</span>
+          <span className="text-brand-accent-strong text-[0.85rem] font-semibold">View Tracking →</span>
         </div>
       )}
     </Link>
