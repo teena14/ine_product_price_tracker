@@ -1,11 +1,22 @@
 import { useCallback, useRef, useState } from 'react'
 import { createTrackedProduct, getProduct } from '../api/products'
 
-export function useProductSelection({ onProductTracked } = {}) {
+export function useProductSelection({ onProductsTracked } = {}) {
   const [detailState, setDetailState] = useState({ status: 'idle', data: null, error: '' })
   const [selectedOptionId, setSelectedOptionId] = useState('')
   const [trackingState, setTrackingState] = useState({ status: 'idle', error: '' })
   const configSectionRef = useRef(null)
+
+  const clearSelection = useCallback(() => {
+    setDetailState({ status: 'idle', data: null, error: '' })
+    setSelectedOptionId('')
+    setTrackingState({ status: 'idle', error: '' })
+  }, [])
+
+  const handleBulkTrackingComplete = useCallback((trackedProducts) => {
+    onProductsTracked?.(trackedProducts)
+    clearSelection()
+  }, [clearSelection, onProductsTracked])
 
   const handleSelectProduct = useCallback(async (productId) => {
     setDetailState({ status: 'loading', data: null, error: '' })
@@ -40,11 +51,7 @@ export function useProductSelection({ onProductTracked } = {}) {
         optionId: selectedOption.optionId,
       })
 
-      if (onProductTracked) {
-        onProductTracked(trackedProduct)
-      }
-
-      setTrackingState({ status: 'success', trackedId: trackedProduct.id, error: '' })
+      handleBulkTrackingComplete([trackedProduct])
       return trackedProduct
     } catch (error) {
       setTrackingState({
@@ -52,7 +59,7 @@ export function useProductSelection({ onProductTracked } = {}) {
         error: error.message || 'Failed to track product option',
       })
     }
-  }, [detailState.data, selectedOptionId, onProductTracked])
+  }, [detailState.data, selectedOptionId, handleBulkTrackingComplete])
 
   const selectedProduct = detailState.data
   const selectedOption = selectedProduct?.options?.find((o) => o.optionId === selectedOptionId)
@@ -69,5 +76,6 @@ export function useProductSelection({ onProductTracked } = {}) {
     selectProduct: handleSelectProduct,
     handleTrackOption,
     trackSelectedOption: handleTrackOption,
+    handleBulkTrackingComplete,
   }
 }

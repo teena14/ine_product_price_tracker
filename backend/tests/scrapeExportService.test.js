@@ -1,18 +1,25 @@
 import { jest } from '@jest/globals';
 
 const mockGetTrackedProductById = jest.fn();
+const mockListAllTrackedProductsForExport = jest.fn();
 const mockGetAllScrapeAttemptsForExport = jest.fn();
+const mockGetAllScrapeAttemptsForFullExport = jest.fn();
 
 jest.unstable_mockModule('../src/repositories/trackedProductsRepository.js', () => ({
   getTrackedProductById: mockGetTrackedProductById,
+  listAllTrackedProductsForExport: mockListAllTrackedProductsForExport,
 }));
 jest.unstable_mockModule('../src/repositories/scrapeAttemptsRepository.js', () => ({
   getAllScrapeAttemptsForExport: mockGetAllScrapeAttemptsForExport,
+  getAllScrapeAttemptsForFullExport: mockGetAllScrapeAttemptsForFullExport,
 }));
 
-const { buildScrapeHistoryCsv, exportTrackedProductHistory } = await import(
-  '../src/services/scrapeExportService.js'
-);
+const {
+  buildAllScrapeHistoriesCsv,
+  buildScrapeHistoryCsv,
+  exportAllTrackedProductsHistory,
+  exportTrackedProductHistory,
+} = await import('../src/services/scrapeExportService.js');
 
 const TRACKED_PRODUCT = {
   id: 'a0b1c2d3-e4f5-4a67-8b9c-0d1e2f3a4b5c',
@@ -104,5 +111,59 @@ describe('scrapeExportService', () => {
 
     await expect(exportTrackedProductHistory('missing-id')).rejects.toThrow('not found');
     expect(mockGetAllScrapeAttemptsForExport).not.toHaveBeenCalled();
+  });
+
+  test('builds one chronological CSV across every tracked product', () => {
+    const secondProduct = {
+      id: 'b1c2d3e4-f5a6-4b78-9c0d-1e2f3a4b5c6d',
+      product_id: '4120',
+      product_name: 'Ridge Pack',
+      option_name: 'Blue',
+    };
+
+    const csv = buildAllScrapeHistoriesCsv([TRACKED_PRODUCT, secondProduct], [
+      {
+        tracked_product_id: secondProduct.id,
+        outcome: 'success',
+        scraped_at: '2026-09-26T12:00:00.000Z',
+        price: 125,
+        stock: 4,
+      },
+      {
+        tracked_product_id: TRACKED_PRODUCT.id,
+        outcome: 'failed',
+        scraped_at: '2026-09-26T12:01:00.000Z',
+        price: null,
+        stock: null,
+      },
+    ]);
+
+    expect(csv).toBe(
+      'product_id,product_name,selected_option,timestamp,price,stock,outcome\r\n' +
+        '4120,Ridge Pack,Blue,2026-09-26T12:00:00.000Z,125,4,success\r\n' +
+        '2037,Halvard Headlamp One,Duo,2026-09-26T12:01:00.000Z,,,failed\r\n'
+    );
+  });
+
+  test('exports every product and every scrape attempt', async () => {
+    const attempts = [
+      {
+        tracked_product_id: TRACKED_PRODUCT.id,
+        outcome: 'success',
+        scraped_at: '2026-09-26T12:00:00.000Z',
+        price: 100,
+        stock: 2,
+      },
+    ];
+    mockListAllTrackedProductsForExport.mockResolvedValue([TRACKED_PRODUCT]);
+    mockGetAllScrapeAttemptsForFullExport.mockResolvedValue(attempts);
+
+    await expect(exportAllTrackedProductsHistory()).resolves.toEqual({
+      csv:
+        'product_id,product_name,selected_option,timestamp,price,stock,outcome\r\n' +
+        '2037,Halvard Headlamp One,Duo,2026-09-26T12:00:00.000Z,100,2,success\r\n',
+    });
+    expect(mockListAllTrackedProductsForExport).toHaveBeenCalledWith();
+    expect(mockGetAllScrapeAttemptsForFullExport).toHaveBeenCalledWith();
   });
 });

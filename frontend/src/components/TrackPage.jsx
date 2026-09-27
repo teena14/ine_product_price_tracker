@@ -1,6 +1,12 @@
 import { useEffect, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
-import { downloadTrackedProductHistoryCsv, getTrackedProductHistory } from '../api'
+import { Link, useParams } from 'react-router-dom'
+import {
+  downloadTrackedProductHistoryCsv,
+  getTrackedProductAlerts,
+  getTrackedProductHistory,
+  scrapeTrackedProductNow,
+} from '../api'
+import { FrequencyConfig } from './FrequencyConfig'
 import {
   formatDuration,
   formatPrice,
@@ -71,19 +77,32 @@ function EmptyState({ title, children }) {
 
 export function TrackPage() {
   const { productId } = useParams()
-  const navigate = useNavigate()
 
   const [historyState, setHistoryState] = useState({ status: 'loading', data: null, error: '' })
   const [exportState, setExportState] = useState({ status: 'idle', error: '' })
+  const [manualScrapeState, setManualScrapeState] = useState({
+    status: 'idle',
+    runId: '',
+    error: '',
+    initialAttemptCount: 0,
+    initialLatestAttemptId: null,
+    initialLastScrapedAt: null,
+  })
   const [advancedOpen, setAdvancedOpen] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [productAlerts, setProductAlerts] = useState([])
+  // Local override after frequency save so next_scrape_at shows immediately
+  const [frequencyOverride, setFrequencyOverride] = useState(null)
 
   useEffect(() => {
     if (!productId) return
     loadHistory()
+    loadProductAlerts()
 
     const refreshWhenVisible = () => {
       if (document.visibilityState === 'visible') {
         loadHistory({ background: true })
+        loadProductAlerts()
       }
     }
 
@@ -111,6 +130,112 @@ export function TrackPage() {
     }
   }
 
+  async function loadProductAlerts() {
+    try {
+      const data = await getTrackedProductAlerts(productId)
+      setProductAlerts(data.alerts ?? [])
+    } catch {
+      // non-critical
+    }
+  }
+
+  useEffect(() => {
+    if (manualScrapeState.status !== 'running' || !manualScrapeState.runId) return undefined
+
+    let cancelled = false
+    let pollTimer
+
+    const pollForManualScrape = async () => {
+      try {
+        const data = await getTrackedProductHistory(productId)
+        if (cancelled) return
+
+        setHistoryState({ status: 'success', data, error: '' })
+        const attempts = data.attempts ?? []
+        const hasMatchingRun = attempts.some(
+          (attempt) => attempt.run_id === manualScrapeState.runId || attempt.runId === manualScrapeState.runId
+        )
+        const currentLastScrapedAt = data.trackedProduct?.last_scraped_at ?? null
+        const historyAdvanced =
+          attempts.length > manualScrapeState.initialAttemptCount ||
+          (manualScrapeState.initialLatestAttemptId !== null &&
+            attempts[0]?.id !== manualScrapeState.initialLatestAttemptId) ||
+          currentLastScrapedAt !== manualScrapeState.initialLastScrapedAt
+
+        if (hasMatchingRun || historyAdvanced) {
+          setManualScrapeState({
+            status: 'idle',
+            runId: '',
+            error: '',
+            initialAttemptCount: 0,
+            initialLatestAttemptId: null,
+            initialLastScrapedAt: null,
+          })
+          void getTrackedProductAlerts(productId)
+            .then((alertsData) => setProductAlerts(alertsData.alerts ?? []))
+            .catch(() => {})
+          return
+        }
+      } catch (error) {
+        if (cancelled) return
+        setManualScrapeState({
+          status: 'error',
+          runId: '',
+          error: error.message || 'Could not refresh the scrape result',
+          initialAttemptCount: 0,
+          initialLatestAttemptId: null,
+          initialLastScrapedAt: null,
+        })
+        return
+      }
+
+      pollTimer = window.setTimeout(pollForManualScrape, 2_000)
+    }
+
+    pollTimer = window.setTimeout(pollForManualScrape, 1_500)
+    return () => {
+      cancelled = true
+      window.clearTimeout(pollTimer)
+    }
+  }, [manualScrapeState, productId])
+
+  async function handleScrapeNow() {
+    const currentAttempts = historyState.data?.attempts ?? []
+    const completionBaseline = {
+      initialAttemptCount: currentAttempts.length,
+      initialLatestAttemptId: currentAttempts[0]?.id ?? null,
+      initialLastScrapedAt: historyState.data?.trackedProduct?.last_scraped_at ?? null,
+    }
+
+    setManualScrapeState({ status: 'loading', runId: '', error: '', ...completionBaseline })
+
+    try {
+      const job = await scrapeTrackedProductNow(productId)
+      if (job.status !== 'started') {
+        setManualScrapeState({
+          status: 'error',
+          runId: '',
+          error: 'A scrape is already in progress. Please wait for it to finish.',
+          initialAttemptCount: 0,
+          initialLatestAttemptId: null,
+          initialLastScrapedAt: null,
+        })
+        return
+      }
+
+      setManualScrapeState({ status: 'running', runId: job.runId, error: '', ...completionBaseline })
+    } catch (error) {
+      setManualScrapeState({
+        status: 'error',
+        runId: '',
+        error: error.message || 'Could not start a scrape',
+        initialAttemptCount: 0,
+        initialLatestAttemptId: null,
+        initialLastScrapedAt: null,
+      })
+    }
+  }
+
   async function handleExportHistory() {
     setExportState({ status: 'loading', error: '' })
     try {
@@ -123,7 +248,7 @@ export function TrackPage() {
       link.click()
       link.remove()
       window.URL.revokeObjectURL(objectUrl)
-      setExportState({ status: 'success', error: '' })
+      setExportState({ status: 'idle', error: '' })
     } catch (error) {
       setExportState({ status: 'error', error: error.message })
     }
@@ -159,7 +284,11 @@ export function TrackPage() {
     )
   }
 
-  const { trackedProduct, attempts = [] } = historyState.data ?? {}
+  const { trackedProduct: rawProduct, attempts = [] } = historyState.data ?? {}
+  // Merge frequency override so the FrequencyConfig panel is always fresh
+  const trackedProduct = rawProduct && frequencyOverride
+    ? { ...rawProduct, ...frequencyOverride }
+    : rawProduct
   if (!trackedProduct) return null
 
   const latestAttempt = attempts[0] ?? null
@@ -193,15 +322,33 @@ export function TrackPage() {
           </h1>
           <p className="text-brand-muted text-base mb-2.5">{trackedProduct.option_name}</p>
         </div>
-        <a
-          href={trackedProduct.product_url}
-          target="_blank"
-          rel="noreferrer"
-          className="text-brand-accent-strong text-[0.9rem] font-bold no-underline whitespace-nowrap hover:underline inline-block mt-2 focus-visible:outline-3 focus-visible:outline-brand-focus focus-visible:outline-offset-2"
-        >
-          View in store ↗
-        </a>
+        <div className="flex flex-col items-end gap-3 shrink-0">
+          <a
+            href={trackedProduct.product_url}
+            target="_blank"
+            rel="noreferrer"
+            className="text-brand-accent-strong text-[0.9rem] font-bold no-underline whitespace-nowrap hover:underline inline-block focus-visible:outline-3 focus-visible:outline-brand-focus focus-visible:outline-offset-2"
+          >
+            View in store ↗
+          </a>
+          <button
+            type="button"
+            onClick={handleScrapeNow}
+            disabled={manualScrapeState.status === 'loading' || manualScrapeState.status === 'running'}
+            className={BTN_SECONDARY_CLASS}
+          >
+            {manualScrapeState.status === 'loading' || manualScrapeState.status === 'running'
+              ? 'Scraping…'
+              : 'Scrape now'}
+          </button>
+        </div>
       </header>
+
+      {manualScrapeState.status === 'error' && (
+        <p className="rounded-[10px] mb-6 px-4 py-[13px] bg-brand-error-bg text-brand-error text-sm" role="alert">
+          {manualScrapeState.error}
+        </p>
+      )}
 
       {/* ── Status cards ───────────────────────────────────────────────────── */}
       <section
@@ -273,8 +420,23 @@ export function TrackPage() {
               {trackedProduct.active ? 'Active' : 'Paused'}
             </span>
           </span>
+          <span className="text-brand-muted text-[0.82rem]">
+            {trackedProduct.scrape_frequency_minutes != null
+              ? `Custom schedule · every ${trackedProduct.scrape_frequency_minutes} min`
+              : 'Global schedule'}
+          </span>
         </StatusCard>
       </section>
+
+      {/* ── Layout change warning ───────────────────────────────────────────── */}
+      {trackedProduct.layout_changed_at && (
+        <div className="rounded-[10px] my-5 mb-6 px-4 py-[13px] bg-amber-50 text-amber-800 text-sm border border-amber-200" role="alert">
+          <strong>⚠️ Page structure changed</strong>{' '}
+          The store's page layout changed on{' '}
+          <strong>{formatTimestamp(trackedProduct.layout_changed_at)}</strong>. The scraper selectors
+          may need a review — check the Advanced Details section for recent errors.
+        </div>
+      )}
 
       {/* ── Latest scrape failure alert ─────────────────────────────────────── */}
       {latestAttempt && latestAttempt.outcome !== 'success' && (
@@ -282,6 +444,40 @@ export function TrackPage() {
           <strong>Last check failed:</strong>{' '}
           {latestAttempt.error_code}: {latestAttempt.error_message}
         </div>
+      )}
+
+      {/* ── Product-level alerts ────────────────────────────────────────────── */}
+      {productAlerts.length > 0 && (
+        <section
+          className="border border-brand-border rounded-2xl bg-brand-surface shadow-[0_2px_8px_rgb(25_39_52/0.04)] mt-4 mb-6 overflow-hidden"
+          aria-labelledby="product-alerts-heading"
+        >
+          <div className="px-5 py-3 border-b border-brand-border bg-brand-subtle flex items-center justify-between">
+            <h2 id="product-alerts-heading" className="text-sm font-bold text-brand-heading m-0">
+              🔔 Recent Alerts
+            </h2>
+            <span className="text-brand-muted text-[0.8rem]">{productAlerts.length} alert{productAlerts.length === 1 ? '' : 's'}</span>
+          </div>
+          <ul className="divide-y divide-brand-border list-none m-0 p-0">
+            {productAlerts.slice(0, 5).map((alert) => (
+              <li key={alert.id} className="px-5 py-3 flex items-start gap-3">
+                <span className="text-base mt-0.5 shrink-0">
+                  {alert.alert_type === 'price_drop' ? '📉'
+                    : alert.alert_type === 'back_in_stock' ? '✅'
+                    : alert.alert_type === 'out_of_stock' ? '❌'
+                    : '⚠️'}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-brand-text text-sm m-0">{alert.message}</p>
+                  <span className="text-brand-muted text-[0.78rem]">{formatRelativeTime(alert.created_at)}</span>
+                </div>
+                {!alert.read_at && (
+                  <span className="w-2 h-2 rounded-full bg-brand-accent shrink-0 mt-1.5" aria-label="Unread" />
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
 
       {/* ── Price & Stock History ───────────────────────────────────────────── */}
@@ -308,11 +504,6 @@ export function TrackPage() {
           </div>
         </div>
 
-        {exportState.status === 'success' && (
-          <p className="rounded-[10px] my-5 px-4 py-[13px] bg-brand-success-bg text-brand-success text-sm" role="status">
-            CSV download started.
-          </p>
-        )}
         {exportState.status === 'error' && (
           <p className="rounded-[10px] my-5 px-4 py-[13px] bg-brand-error-bg text-brand-error text-sm" role="alert">
             {exportState.error}
@@ -351,6 +542,33 @@ export function TrackPage() {
         )}
       </section>
 
+      {/* ── Settings: Frequency + other controls ────────────────────────────── */}
+      <section
+        className="border border-brand-border rounded-2xl bg-brand-subtle shadow-[0_2px_8px_rgb(25_39_52/0.04)] mt-6 p-5 sm:p-7"
+        aria-labelledby="settings-heading"
+      >
+        <button
+          type="button"
+          id="settings-heading"
+          className="w-full bg-transparent border-0 text-brand-heading cursor-pointer flex justify-between items-center text-left font-bold text-base gap-2 p-0 hover:text-brand-accent-strong focus-visible:outline-3 focus-visible:outline-brand-focus focus-visible:outline-offset-2"
+          aria-expanded={settingsOpen}
+          aria-controls="settings-panel"
+          onClick={() => setSettingsOpen((v) => !v)}
+        >
+          <span>Settings</span>
+          <span aria-hidden="true" className="text-brand-muted text-xs">{settingsOpen ? '▲' : '▼'}</span>
+        </button>
+
+        {settingsOpen && (
+          <div id="settings-panel">
+            <FrequencyConfig
+              trackedProduct={trackedProduct}
+              onUpdated={(updated) => setFrequencyOverride(updated)}
+            />
+          </div>
+        )}
+      </section>
+
       {/* ── Advanced Details (collapsible) ──────────────────────────────────── */}
       <section
         className="border border-brand-border rounded-2xl bg-brand-subtle shadow-[0_2px_8px_rgb(25_39_52/0.04)] mt-6 p-5 sm:p-7"
@@ -380,6 +598,13 @@ export function TrackPage() {
                 {trackedProduct.id}
               </code>{' '}
               · Added: {formatTimestamp(trackedProduct.created_at)}
+              {trackedProduct.ui_manifest_hash && (
+                <>{' '}· Manifest hash:{' '}
+                  <code className="bg-brand-border rounded px-1.5 py-0.5 font-mono text-[0.8rem] text-brand-text">
+                    {trackedProduct.ui_manifest_hash}
+                  </code>
+                </>
+              )}
             </p>
 
             <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-4 mt-5">

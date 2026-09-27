@@ -66,6 +66,24 @@ export async function listTrackedProducts() {
 }
 
 /**
+ * Export includes historical data for every tracked product, including any
+ * inactive records that are intentionally hidden from the main list.
+ */
+export async function listAllTrackedProductsForExport() {
+  const supabase = getSupabaseClient();
+  const { data, error } = await supabase
+    .from('tracked_products')
+    .select('*')
+    .order('created_at', { ascending: true });
+
+  if (error) {
+    throw databaseError('listing tracked products for export', error);
+  }
+
+  return data;
+}
+
+/**
  * Trusted scraper query. Kept separate to make its oldest-first execution
  * order explicit even though the global dashboard is intentionally public.
  */

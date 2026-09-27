@@ -2,6 +2,8 @@
 
 A production-minded, shared public dashboard that tracks INE product prices and stock levels. Visitors can search, view the common tracked list, and add a product option; each new option receives an immediate first scrape. Destructive controls are intentionally not public.
 
+> **UI/UX Philosophy:** The interface is intentionally minimal and clean. Design decisions prioritised UX clarity over visual density — the UI stayed minimal on purpose, keeping the focus on data and task flow rather than decorative chrome.
+
 ---
 
 ## Architecture Overview
@@ -263,6 +265,7 @@ non-production, and GitHub Actions must never trigger scheduled scraping.
 ## Design Decisions, Trade-offs & AI Usage
 
 A detailed technical design note is provided in [`DESIGN_NOTE.md`](./DESIGN_NOTE.md), covering:
+- **UI/UX Philosophy:** The frontend UI is intentionally minimal and clean. The focus was on UX — making data easy to find and act on — rather than on visual complexity. The minimal aesthetic was a deliberate design choice, not a time constraint.
 - **Scraping Reliability:** Manifest-driven dynamic DOM selectors, pointer interaction emulation, retry policy with exponential backoff, cookie consent dismissal, and isolated browser page contexts.
 - **Architectural Trade-offs:**
   1. *Lightweight HTTP vs. Playwright:* Plain `fetch` handles 90% of requests (catalog/search), reserving headless browser resources strictly for the complex quote workflow.

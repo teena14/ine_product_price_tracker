@@ -4,6 +4,7 @@ import cors from 'cors';
 import { randomUUID } from 'crypto';
 import productsRouter from './routes/products.js';
 import trackedProductsRouter from './routes/trackedProducts.js';
+import alertsRouter from './routes/alerts.js';
 import { handleInternalScrape } from './controllers/internalScrapeController.js';
 import { requireCronAuth } from './middleware/cronAuth.js';
 import { AppError } from './utils/errors.js';
@@ -45,7 +46,7 @@ app.use(
       }
       callback(new Error(`CORS: origin '${origin}' is not allowed`));
     },
-    methods: ['GET', 'POST'],
+    methods: ['GET', 'POST', 'PATCH'],
     allowedHeaders: ['Content-Type', 'Authorization'],
   })
 );
@@ -61,6 +62,7 @@ app.get('/health', (_req, res) => {
 // --- API routes ---
 app.use('/api/products', productsRouter);
 app.use('/api/tracked-products', trackedProductsRouter);
+app.use('/api/alerts', alertsRouter);
 app.post('/internal/scrape', requireCronAuth, handleInternalScrape);
 
 function safeClientDetails(details) {

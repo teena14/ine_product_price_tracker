@@ -1,5 +1,8 @@
 import { jest } from '@jest/globals';
-import { createScrapeJobStarter } from '../src/services/scrapeJobService.js';
+import {
+  createDueCustomScrapePoller,
+  createScrapeJobStarter,
+} from '../src/services/scrapeJobService.js';
 
 function createLog() {
   return { warn: jest.fn(), error: jest.fn() };
@@ -76,5 +79,34 @@ describe('scheduled scrape job dispatcher', () => {
 
     expect(next).toMatchObject({ runId: 'run-next', started: true });
     expect(executeRun).toHaveBeenCalledTimes(2);
+  });
+
+  test('starts a due-custom poll immediately and then on the configured interval', () => {
+    let scheduledPoll;
+    const intervalId = { unref: jest.fn() };
+    const setIntervalFn = jest.fn((callback, intervalMs) => {
+      scheduledPoll = callback;
+      expect(intervalMs).toBe(60_000);
+      return intervalId;
+    });
+    const clearIntervalFn = jest.fn();
+    const startJob = jest.fn().mockReturnValue({ runId: 'custom-run', started: true });
+
+    const stop = createDueCustomScrapePoller({
+      startJob,
+      setIntervalFn,
+      clearIntervalFn,
+      log: createLog(),
+    });
+
+    expect(startJob).toHaveBeenCalledWith({ customOnly: true });
+    expect(setIntervalFn).toHaveBeenCalledTimes(1);
+    expect(intervalId.unref).toHaveBeenCalledWith();
+
+    scheduledPoll();
+    expect(startJob).toHaveBeenCalledTimes(2);
+
+    stop();
+    expect(clearIntervalFn).toHaveBeenCalledWith(intervalId);
   });
 });

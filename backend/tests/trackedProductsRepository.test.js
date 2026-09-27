@@ -10,6 +10,7 @@ const {
   createTrackedProduct,
   getTrackedProductById,
   listAllActiveTrackedProducts,
+  listAllTrackedProductsForExport,
   listTrackedProducts,
 } = await import('../src/repositories/trackedProductsRepository.js');
 
@@ -79,6 +80,17 @@ describe('tracked-products repository queries', () => {
     await expect(listAllActiveTrackedProducts()).resolves.toEqual([{ id: 'oldest' }]);
     expect(oldestFirst.query.eq).toHaveBeenCalledWith('active', true);
     expect(oldestFirst.query.order).toHaveBeenCalledWith('created_at', { ascending: true });
+  });
+
+  test('includes active and inactive products for a complete export', async () => {
+    const { query } = configureQuery({ data: [{ id: 'active' }, { id: 'inactive' }], error: null });
+
+    await expect(listAllTrackedProductsForExport()).resolves.toEqual([
+      { id: 'active' },
+      { id: 'inactive' },
+    ]);
+    expect(query.eq).not.toHaveBeenCalled();
+    expect(query.order).toHaveBeenCalledWith('created_at', { ascending: true });
   });
 
   test('maps a missing tracked product to a safe not-found error', async () => {

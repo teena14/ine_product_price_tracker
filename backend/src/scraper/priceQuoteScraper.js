@@ -9,9 +9,9 @@ const QUOTE_START_TIMEOUT_MS = 2_000;
 const QUOTE_START_MAX_ATTEMPTS = 5;
 const CHECK_PRICE_ENABLE_TIMEOUT_MS = 30_000;
 const CHECK_PRICE_CLICK_TIMEOUT_MS = 5_000;
-const COOKIE_CONSENT_TIMEOUT_MS = 10_000;
+const COOKIE_CONSENT_TIMEOUT_MS = 20_000;
 const COOKIE_CONSENT_CLICK_TIMEOUT_MS = 2_000;
-const COOKIE_CONSENT_DISMISS_TIMEOUT_MS = 10_000;
+const COOKIE_CONSENT_DISMISS_TIMEOUT_MS = 20_000;
 const MIN_POINTER_MOVES = 10;
 const POINTER_MOVE_DELAY_MS = 75;
 const UI_MANIFEST_PATH = '/api/v2/ui/manifest';
@@ -216,6 +216,18 @@ async function navigateToProductAndLoadUiManifest(page, productId) {
  */
 async function dismissCookieConsent(page, timeoutMs) {
   const button = page.getByRole('button', { name: COOKIE_ALLOW_BUTTON_NAME }).first();
+
+  // The 20-second timeout is for a consent banner that is actually shown. Do
+  // not spend that time looking for a banner on every scrape: most visits do
+  // not show one, and waiting here would make every normal quote needlessly
+  // slow.
+  try {
+    if (!(await button.isVisible())) {
+      return false;
+    }
+  } catch {
+    return false;
+  }
 
   try {
     await button.waitFor({ state: 'visible', timeout: timeoutMs });
@@ -469,10 +481,16 @@ export async function scrapeCurrentQuote({ productId, optionId }) {
     const priceText = await page.locator(priceSelectorFromUiManifest(uiManifest)).innerText();
     const stockText = await page.locator('.offer-panel .avail-pill:visible').innerText();
 
-    return validateQuote({
+    const quote = validateQuote({
       price: parseDisplayedPrice(priceText),
       stock: parseDisplayedStock(stockText),
     });
+
+    // Attach the manifest so the persistence layer can detect layout changes.
+    // The field is enumerable but ignored by validateQuote and callers that
+    // only destructure { price, stock }.
+    quote.uiManifest = uiManifest;
+    return quote;
   } catch (error) {
     if (error instanceof QuoteScraperError) {
       throw error;

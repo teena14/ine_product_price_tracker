@@ -1,6 +1,7 @@
 import { saveScrapeAttempt, validateScrapeAttempt } from '../repositories/scrapeAttemptsRepository.js';
 import { updateTrackedProductLastScrape } from '../repositories/trackedProductsRepository.js';
 import { scrapeQuoteWithRetries } from '../scraper/scrapeRetryPolicy.js';
+import { generatePriceAndStockAlerts, detectAndRecordLayoutChange } from './alertService.js';
 
 function requireNonEmptyString(value, fieldName) {
   if (typeof value !== 'string' || value.trim().length === 0) {
@@ -119,6 +120,15 @@ export async function scrapeAndPersistTrackedProduct(
     stock: successQuote?.stock ?? null,
     scrapedAt: new Date().toISOString(),
   });
+
+  // Generate in-app alerts for price drops and stock changes on success
+  if (successQuote) {
+    await generatePriceAndStockAlerts(trackedProduct, successQuote);
+    // Feature 3: detect layout changes from the manifest returned by the scraper
+    if (successQuote.uiManifest) {
+      await detectAndRecordLayoutChange(trackedProduct, successQuote.uiManifest);
+    }
+  }
 
   return { ...scrapeResult, persistedAttempts };
 }

@@ -117,9 +117,19 @@ export function SearchOverlay({ onSelectProduct }) {
           Search for an INE product
         </label>
         <div className="relative flex-1 flex items-center">
-          <span className="left-3 pointer-events-none absolute text-[0.9rem] opacity-50" aria-hidden="true">
-            🔍
-          </span>
+          <svg
+            className="left-3 pointer-events-none absolute h-4 w-4 text-brand-muted"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <circle cx="11" cy="11" r="6" />
+            <path d="m16 16 4 4" />
+          </svg>
           <input
             id="product-search-input"
             type="text"

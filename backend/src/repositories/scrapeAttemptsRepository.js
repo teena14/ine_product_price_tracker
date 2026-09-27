@@ -149,3 +149,21 @@ export async function getAllScrapeAttemptsForExport(trackedProductId) {
 
   return data;
 }
+
+/**
+ * Returns the complete immutable attempt history across every tracked
+ * product, ordered chronologically for the all-products CSV export.
+ */
+export async function getAllScrapeAttemptsForFullExport() {
+  const supabase = getSupabaseClient();
+  const { data, error } = await supabase
+    .from('scrape_attempts')
+    .select('*')
+    .order('scraped_at', { ascending: true });
+
+  if (error) {
+    throw databaseError('fetching full scrape export data', error);
+  }
+
+  return data;
+}

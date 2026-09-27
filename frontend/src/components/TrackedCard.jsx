@@ -5,6 +5,7 @@ export function TrackedCard({ product }) {
   const lastChecked = product.last_scraped_at
   const currentPrice = product.last_price
   const isAvailable = product.last_stock != null ? product.last_stock > 0 : null
+  const isStarting = !lastChecked
 
   return (
     <Link
@@ -20,9 +21,12 @@ export function TrackedCard({ product }) {
 
         <div className="flex flex-col items-end gap-2 shrink-0">
           <div className="flex flex-wrap items-center gap-2 justify-end">
-            {currentPrice != null && (
-              <span className="font-bold text-[0.95rem] text-brand-heading">{formatPrice(currentPrice)}</span>
-            )}
+            <span className={currentPrice != null
+              ? 'font-bold text-[0.95rem] text-brand-heading'
+              : 'text-brand-muted text-[0.85rem] font-medium'}
+            >
+              {currentPrice != null ? formatPrice(currentPrice) : 'No price yet'}
+            </span>
 
             {isAvailable !== null && (
               <span
@@ -44,12 +48,14 @@ export function TrackedCard({ product }) {
         </div>
       </div>
 
-      {lastChecked && (
-        <div className="border-t border-brand-border pt-2.5 mt-2.5 flex items-center justify-between">
-          <span className="text-brand-muted text-[0.8rem]">Checked {formatRelativeTime(lastChecked)}</span>
-          <span className="text-brand-accent-strong text-[0.85rem] font-semibold">View Tracking →</span>
-        </div>
-      )}
+      <div className="border-t border-brand-border pt-2.5 mt-2.5 flex items-center justify-between">
+        <span className="text-brand-muted text-[0.8rem]">
+          {lastChecked ? `Checked ${formatRelativeTime(lastChecked)}` : 'Not checked yet'}
+        </span>
+        <span className="text-brand-accent-strong text-[0.85rem] font-semibold">
+          {isStarting ? 'Starting tracking…' : 'View Tracking →'}
+        </span>
+      </div>
     </Link>
   )
 }

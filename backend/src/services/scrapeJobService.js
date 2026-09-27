@@ -20,7 +20,7 @@ export function createScrapeJobStarter(
 ) {
   let activeJob = null;
 
-  function start() {
+  function start(runOptions = {}) {
     if (activeJob) {
       log.warn('Scheduled scrape trigger received while a run is already active', {
         runId: activeJob.runId,
@@ -32,7 +32,7 @@ export function createScrapeJobStarter(
     // Deferring execution by one microtask guarantees the controller can send
     // its 202 response before the first database or browser operation starts.
     const completion = Promise.resolve()
-      .then(() => executeRun({ runId }))
+      .then(() => executeRun({ runId, ...runOptions }))
       .catch((error) => {
         // The request has already been acknowledged, so preserve the error in
         // server logs rather than allowing an unhandled rejection.
@@ -53,6 +53,41 @@ export function createScrapeJobStarter(
 
 const scheduledScrapeJobStarter = createScrapeJobStarter();
 
-export function startActiveTrackedProductScrapeJob() {
-  return scheduledScrapeJobStarter.start();
+export function startActiveTrackedProductScrapeJob(runOptions) {
+  return scheduledScrapeJobStarter.start(runOptions);
+}
+
+/**
+ * Checks persistent next_scrape_at values on a short interval so a custom
+ * five-minute schedule is actually executed even when the global cron runs
+ * less often. The shared job starter prevents overlap with a cron-triggered
+ * all-products scrape.
+ */
+export function createDueCustomScrapePoller(
+  {
+    startJob = startActiveTrackedProductScrapeJob,
+    setIntervalFn = setInterval,
+    clearIntervalFn = clearInterval,
+    intervalMs = 60_000,
+    log = logger,
+  } = {}
+) {
+  function poll() {
+    try {
+      const job = startJob({ customOnly: true });
+      if (!job.started) {
+        log.info('Custom scrape poll skipped because another scrape run is active', {
+          runId: job.runId,
+        });
+      }
+    } catch (error) {
+      log.error('Custom scrape poll could not start', { error });
+    }
+  }
+
+  poll();
+  const intervalId = setIntervalFn(poll, intervalMs);
+  intervalId?.unref?.();
+
+  return () => clearIntervalFn(intervalId);
 }

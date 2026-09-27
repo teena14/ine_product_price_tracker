@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { listTrackedProducts } from '../api/products'
 
 const DASHBOARD_REFRESH_INTERVAL_MS = 60_000
 
 export function useTrackedProducts() {
+  const pendingProductsRef = useRef(new Map())
   const [trackedProductsState, setTrackedProductsState] = useState({
     status: 'loading',
     products: [],
@@ -17,9 +18,19 @@ export function useTrackedProducts() {
 
     try {
       const data = await listTrackedProducts()
+      const fetchedProducts = data.trackedProducts || []
+      const fetchedIds = new Set(fetchedProducts.map((product) => product.id))
+
+      for (const productId of fetchedIds) {
+        pendingProductsRef.current.delete(productId)
+      }
+
       setTrackedProductsState({
         status: 'success',
-        products: data.trackedProducts || [],
+        products: [
+          ...pendingProductsRef.current.values(),
+          ...fetchedProducts,
+        ],
         error: '',
       })
     } catch (error) {
@@ -51,20 +62,35 @@ export function useTrackedProducts() {
     }
   }, [loadTrackedProducts])
 
-  const addProduct = useCallback((trackedProduct) => {
-    if (!trackedProduct) return
+  const addProducts = useCallback((trackedProducts) => {
+    const newProducts = (Array.isArray(trackedProducts) ? trackedProducts : [trackedProducts])
+      .filter(Boolean)
+    if (newProducts.length === 0) return
+
+    for (const product of newProducts) {
+      pendingProductsRef.current.set(product.id, product)
+    }
+
     setTrackedProductsState((current) => ({
       status: 'success',
-      products: [trackedProduct, ...current.products],
+      products: [
+        ...newProducts.filter((product) => !current.products.some((currentProduct) => currentProduct.id === product.id)),
+        ...current.products,
+      ],
       error: '',
     }))
   }, [])
+
+  const addProduct = useCallback((trackedProduct) => {
+    addProducts([trackedProduct])
+  }, [addProducts])
 
   return {
     status: trackedProductsState.status,
     products: trackedProductsState.products,
     error: trackedProductsState.error,
     addProduct,
+    addProducts,
     addTrackedProduct: addProduct,
     reload: loadTrackedProducts,
     loadTrackedProducts,

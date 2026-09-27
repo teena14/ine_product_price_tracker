@@ -2,10 +2,12 @@ import 'dotenv/config';
 import app from './app.js';
 import { validateSupabaseConfig } from './config/supabase.js';
 import { closeQuoteScraperBrowser } from './scraper/priceQuoteScraper.js';
+import { createDueCustomScrapePoller } from './services/scrapeJobService.js';
 import { logger } from './utils/logger.js';
 
 const PORT = process.env.PORT || 3001;
 let server;
+let stopCustomScrapePoller;
 let shuttingDown = false;
 
 try {
@@ -16,6 +18,7 @@ try {
       environment: process.env.NODE_ENV || 'development',
     });
   });
+  stopCustomScrapePoller = createDueCustomScrapePoller();
 } catch (error) {
   logger.error('Server failed to start', { error });
   process.exitCode = 1;
@@ -27,6 +30,8 @@ async function shutdown(signal) {
   }
   shuttingDown = true;
   logger.info('Server shutdown requested', { signal });
+
+  stopCustomScrapePoller?.();
 
   await new Promise((resolve) => {
     if (!server) {

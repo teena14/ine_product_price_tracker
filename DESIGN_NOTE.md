@@ -4,6 +4,23 @@ This design note accompanies the **INE Product Price Tracker** submission. Writt
 1. **Scraping Reliability Engineering** — How the scraper overcomes the hostile, dynamic anti-bot defenses of the mock storefront without exhausting host resources.
 2. **Architectural Trade-offs & System Decisions** — The deliberate trade-offs evaluated against the real constraints of Render's free tier (512MB RAM), external scheduler limits (30-second cron timeouts), and database safety.
 3. **What AI Tools Got Wrong & How I Fixed It** — An honest audit of subtle failure modes introduced by AI coding assistants during initial development and the exact engineering fixes applied.
+4. **UI/UX Philosophy** — Why the frontend stayed intentionally minimal and clean.
+
+---
+
+## 0. UI/UX Philosophy
+
+The frontend UI is **intentionally minimal and clean**. This was a deliberate design decision, not a deadline shortcut.
+
+The focus throughout was on **UX over visual complexity**: making data easy to find, read, and act on. A cluttered dashboard with heavy charting libraries, dense colour palettes, or decorative chrome would work against the core purpose \u2014 surfacing price and stock history clearly and honestly.
+
+Key intentional choices:
+- **Table-first history view** over heavy SVG charts \u2014 exact values with no smoothing or visual ambiguity (see §2.4).
+- **No client-side state management library** \u2014 straightforward React hooks kept the interaction model predictable.
+- **Additive-only public actions** \u2014 no destructive controls on the public surface, reducing cognitive load for reviewers.
+- **Minimal colour and typography** \u2014 kept focus on data rather than aesthetics.
+
+The UI remained minimal on purpose. UX clarity was the design goal.
 
 ---
 

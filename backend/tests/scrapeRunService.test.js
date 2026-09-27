@@ -33,6 +33,45 @@ describe('active tracked-product scrape run', () => {
     expect(closeBrowser).toHaveBeenCalledTimes(1);
   });
 
+  test('runs due custom-frequency products without scraping products on the global schedule', async () => {
+    const customProduct = {
+      id: 'custom-tracked-1',
+      product_id: '1004',
+      option_id: 'o4',
+      scrape_frequency_minutes: 5,
+      next_scrape_at: '2026-09-26T12:00:00.000Z',
+    };
+    const listActiveTrackedProducts = jest.fn();
+    const listDueCustomProducts = jest.fn().mockResolvedValue([customProduct]);
+    const scrapeTrackedProduct = jest.fn().mockResolvedValue({
+      outcome: 'success',
+      attempts: [{ outcome: 'success' }],
+    });
+    const stampNextScrapeAt = jest.fn().mockResolvedValue();
+
+    const summary = await runActiveTrackedProductScrape({
+      runId: 'run-custom-due',
+      customOnly: true,
+      listActiveTrackedProducts,
+      listDueCustomProducts,
+      scrapeTrackedProduct,
+      stampNextScrapeAt,
+      closeBrowser: jest.fn().mockResolvedValue(),
+      log: createLog(),
+    });
+
+    expect(listActiveTrackedProducts).not.toHaveBeenCalled();
+    expect(listDueCustomProducts).toHaveBeenCalledWith();
+    expect(scrapeTrackedProduct).toHaveBeenCalledWith(customProduct, { runId: 'run-custom-due' });
+    expect(stampNextScrapeAt).toHaveBeenCalledWith(customProduct.id, 5);
+    expect(summary).toMatchObject({
+      runId: 'run-custom-due',
+      total: 1,
+      successful: 1,
+      failed: 0,
+    });
+  });
+
   test('uses one run ID, persists each product independently, and continues after an exception', async () => {
     const scrapeTrackedProduct = jest.fn((trackedProduct, { runId }) => {
       if (trackedProduct.id === 'tracked-2') {
@@ -99,6 +138,26 @@ describe('active tracked-product scrape run', () => {
         errorCode: 'PERSISTENCE_ERROR',
       })
     );
+  });
+
+  test('can scrape one requested tracked product without scraping the rest of the dashboard', async () => {
+    const scrapeTrackedProduct = jest.fn().mockResolvedValue({
+      outcome: 'success',
+      attempts: [{ outcome: 'success' }],
+    });
+
+    const summary = await runActiveTrackedProductScrape({
+      runId: 'run-manual-one',
+      trackedProductId: 'tracked-2',
+      listActiveTrackedProducts: jest.fn().mockResolvedValue(TRACKED_PRODUCTS),
+      scrapeTrackedProduct,
+      closeBrowser: jest.fn().mockResolvedValue(),
+      log: createLog(),
+    });
+
+    expect(scrapeTrackedProduct).toHaveBeenCalledTimes(1);
+    expect(scrapeTrackedProduct).toHaveBeenCalledWith(TRACKED_PRODUCTS[1], { runId: 'run-manual-one' });
+    expect(summary).toMatchObject({ total: 1, successful: 1, failed: 0 });
   });
 
   test('closes the browser and rethrows when active products cannot be loaded', async () => {

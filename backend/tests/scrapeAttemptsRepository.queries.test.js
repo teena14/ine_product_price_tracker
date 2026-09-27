@@ -7,6 +7,7 @@ jest.unstable_mockModule('../src/config/supabase.js', () => ({
 }));
 
 const {
+  getAllScrapeAttemptsForFullExport,
   getAllScrapeAttemptsForExport,
   getScrapeHistory,
 } = await import('../src/repositories/scrapeAttemptsRepository.js');
@@ -54,6 +55,18 @@ describe('scrape-attempt history queries', () => {
       { id: 'newest' },
     ]);
     expect(query.eq).toHaveBeenCalledWith('tracked_product_id', 'tracked-id');
+    expect(query.order).toHaveBeenCalledWith('scraped_at', { ascending: true });
+    expect(query.limit).not.toHaveBeenCalled();
+  });
+
+  test('returns every product attempt in chronological order for the full export', async () => {
+    const query = configureQuery({ data: [{ id: 'oldest' }, { id: 'newest' }], error: null });
+
+    await expect(getAllScrapeAttemptsForFullExport()).resolves.toEqual([
+      { id: 'oldest' },
+      { id: 'newest' },
+    ]);
+    expect(query.eq).not.toHaveBeenCalled();
     expect(query.order).toHaveBeenCalledWith('scraped_at', { ascending: true });
     expect(query.limit).not.toHaveBeenCalled();
   });

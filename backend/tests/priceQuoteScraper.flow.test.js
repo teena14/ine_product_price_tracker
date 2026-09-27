@@ -157,7 +157,7 @@ describe('Playwright quote workflow', () => {
     const { optionButton, page, priceControl } = createPage();
     const browser = configureBrowser(page);
 
-    await expect(scrapeCurrentQuote({ productId: '2037', optionId: 'o2' })).resolves.toEqual({
+    await expect(scrapeCurrentQuote({ productId: '2037', optionId: 'o2' })).resolves.toMatchObject({
       price: 18145.5,
       stock: 12,
     });
@@ -183,16 +183,29 @@ describe('Playwright quote workflow', () => {
     const { cookieConsentButton, page } = createPage({ cookieConsent: true });
     configureBrowser(page);
 
-    await expect(scrapeCurrentQuote({ productId: '2037', optionId: 'o2' })).resolves.toEqual({
+    await expect(scrapeCurrentQuote({ productId: '2037', optionId: 'o2' })).resolves.toMatchObject({
       price: 18145.5,
       stock: 12,
     });
 
     expect(cookieConsentButton.click).toHaveBeenCalledTimes(1);
     expect(cookieConsentButton.click).toHaveBeenCalledWith({ timeout: 2_000 });
-    expect(cookieConsentButton.waitFor).toHaveBeenCalledWith({ state: 'visible', timeout: 10_000 });
-    expect(cookieConsentButton.waitFor).toHaveBeenCalledWith({ state: 'hidden', timeout: 10_000 });
+    expect(cookieConsentButton.waitFor).toHaveBeenCalledWith({ state: 'visible', timeout: 20_000 });
+    expect(cookieConsentButton.waitFor).toHaveBeenCalledWith({ state: 'hidden', timeout: 20_000 });
     expect(page.getByRole.mock.calls[0][1].name.test('Allow all cookies')).toBe(true);
+  });
+
+  test('does not wait for a nonexistent cookie-consent prompt', async () => {
+    const { cookieConsentButton, page } = createPage();
+    configureBrowser(page);
+
+    await expect(scrapeCurrentQuote({ productId: '2037', optionId: 'o2' })).resolves.toMatchObject({
+      price: 18145.5,
+      stock: 12,
+    });
+
+    expect(cookieConsentButton.isVisible).toHaveBeenCalledTimes(1);
+    expect(cookieConsentButton.waitFor).not.toHaveBeenCalled();
   });
 
   test('maps browser navigation timeouts and still closes the page', async () => {
@@ -233,7 +246,7 @@ describe('Playwright quote workflow', () => {
     const { page, priceControl } = createPage({ ignoredStartClicks: 1 });
     configureBrowser(page);
 
-    await expect(scrapeCurrentQuote({ productId: '2037', optionId: 'o2' })).resolves.toEqual({
+    await expect(scrapeCurrentQuote({ productId: '2037', optionId: 'o2' })).resolves.toMatchObject({
       price: 18145.5,
       stock: 12,
     });
@@ -246,7 +259,7 @@ describe('Playwright quote workflow', () => {
     const { page, priceControl } = createPage({ disabledCheckPriceWaits: 1 });
     configureBrowser(page);
 
-    await expect(scrapeCurrentQuote({ productId: '2037', optionId: 'o2' })).resolves.toEqual({
+    await expect(scrapeCurrentQuote({ productId: '2037', optionId: 'o2' })).resolves.toMatchObject({
       price: 18145.5,
       stock: 12,
     });

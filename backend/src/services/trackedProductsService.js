@@ -6,6 +6,7 @@ import {
   listTrackedProducts as listTrackedProductsFromRepository,
 } from '../repositories/trackedProductsRepository.js';
 import { getScrapeHistory } from '../repositories/scrapeAttemptsRepository.js';
+import { setTrackedProductFrequency as setFrequency } from '../repositories/scrapeFrequencyRepository.js';
 import { scrapeAndPersistTrackedProduct } from './scrapePersistenceService.js';
 import { errors } from '../utils/errors.js';
 import { logger } from '../utils/logger.js';
@@ -43,7 +44,7 @@ export async function createTrackedProductFromSelection({ productId, optionId })
 
 /**
  * Starts the first quote scrape after a tracking record is safely saved. This
- * never blocks the browser's “Track Product” request: the initial price and
+ * never blocks the browser's "Track Product" request: the initial price and
  * scrape log entries arrive shortly afterwards through the normal dashboard
  * refresh flow. Expected scraper failures are persisted as immutable attempts.
  */
@@ -114,4 +115,79 @@ export async function getTrackedProductHistory(id) {
   const attempts = await getScrapeHistory(id);
 
   return { trackedProduct, attempts };
+}
+
+/**
+ * Feature 4: Sets a custom scrape frequency (in minutes) for a tracked product.
+ * Pass frequencyMinutes=null to reset to the global cron schedule.
+ */
+export async function setTrackedProductFrequency(id, frequencyMinutes) {
+  // Verify the product exists first
+  await getTrackedProductById(id);
+  return setFrequency(id, frequencyMinutes);
+}
+
+/**
+ * Feature 5: Creates tracking records for multiple options of the same product
+ * in one API call, then queues initial scrapes for each. Duplicate options that
+ * are already tracked are silently skipped (they throw DUPLICATE_TRACKING which
+ * we catch per-item so the rest still succeed).
+ */
+export async function createMultipleTrackedProducts(
+  { productId, optionIds },
+  { queueInitialScrape = queueInitialTrackedProductScrape, log = logger } = {}
+) {
+  if (!Array.isArray(optionIds) || optionIds.length === 0) {
+    throw errors.validationError('optionIds must be a non-empty array');
+  }
+
+  let product;
+  try {
+    product = await getProductById(productId);
+  } catch (error) {
+    if (error.status === 404) {
+      throw errors.productNotFound(productId);
+    }
+    throw errors.productCatalogUnavailable();
+  }
+
+  const results = [];
+
+  for (const optionId of optionIds) {
+    const option = product.options.find((candidate) => candidate.optionId === optionId);
+    if (!option) {
+      results.push({ optionId, status: 'error', error: 'INVALID_OPTION' });
+      continue;
+    }
+
+    try {
+      const trackedProduct = await createTrackedProduct({
+        product_id: product.productId,
+        product_url: product.productUrl,
+        product_name: product.name,
+        option_id: option.optionId,
+        option_name: option.label,
+      });
+
+      try {
+        queueInitialScrape(trackedProduct, { log });
+      } catch (queueError) {
+        log.error('Initial scrape queue failed for bulk-tracked product', {
+          trackedProductId: trackedProduct.id,
+          optionId,
+          error: queueError,
+        });
+      }
+
+      results.push({ optionId, status: 'created', trackedProduct });
+    } catch (error) {
+      if (error.code === 'DUPLICATE_TRACKING') {
+        results.push({ optionId, status: 'duplicate' });
+      } else {
+        results.push({ optionId, status: 'error', error: error.code ?? 'UNKNOWN' });
+      }
+    }
+  }
+
+  return results;
 }

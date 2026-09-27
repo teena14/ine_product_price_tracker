@@ -3,19 +3,29 @@ import request from 'supertest';
 import { AppError } from '../src/utils/errors.js';
 
 const mockCreateTrackedProductWithInitialScrape = jest.fn();
+const mockCreateMultipleTrackedProducts = jest.fn();
 const mockListTrackedProducts = jest.fn();
 const mockGetTrackedProduct = jest.fn();
 const mockGetTrackedProductHistory = jest.fn();
+const mockSetTrackedProductFrequency = jest.fn();
+const mockExportAllTrackedProductsHistory = jest.fn();
 const mockExportTrackedProductHistory = jest.fn();
+const mockStartActiveTrackedProductScrapeJob = jest.fn();
 
 jest.unstable_mockModule('../src/services/trackedProductsService.js', () => ({
   createTrackedProductWithInitialScrape: mockCreateTrackedProductWithInitialScrape,
+  createMultipleTrackedProducts: mockCreateMultipleTrackedProducts,
   listTrackedProducts: mockListTrackedProducts,
   getTrackedProduct: mockGetTrackedProduct,
   getTrackedProductHistory: mockGetTrackedProductHistory,
+  setTrackedProductFrequency: mockSetTrackedProductFrequency,
 }));
 jest.unstable_mockModule('../src/services/scrapeExportService.js', () => ({
+  exportAllTrackedProductsHistory: mockExportAllTrackedProductsHistory,
   exportTrackedProductHistory: mockExportTrackedProductHistory,
+}));
+jest.unstable_mockModule('../src/services/scrapeJobService.js', () => ({
+  startActiveTrackedProductScrapeJob: mockStartActiveTrackedProductScrapeJob,
 }));
 
 const { default: app } = await import('../src/app.js');
@@ -106,6 +116,32 @@ describe('public shared tracked-product API', () => {
     expect(mockGetTrackedProductHistory).not.toHaveBeenCalled();
   });
 
+  test('queues an immediate scrape for one active tracked product', async () => {
+    mockGetTrackedProduct.mockResolvedValue({ id: TRACKED_PRODUCT_ID, active: true });
+    mockStartActiveTrackedProductScrapeJob.mockReturnValue({ runId: 'manual-run', started: true });
+
+    const response = await request(app)
+      .post(`/api/tracked-products/${TRACKED_PRODUCT_ID}/scrape`)
+      .expect(202);
+
+    expect(response.body).toEqual({ ok: true, runId: 'manual-run', status: 'started' });
+    expect(mockGetTrackedProduct).toHaveBeenCalledWith(TRACKED_PRODUCT_ID);
+    expect(mockStartActiveTrackedProductScrapeJob).toHaveBeenCalledWith({
+      trackedProductId: TRACKED_PRODUCT_ID,
+    });
+  });
+
+  test('reports an existing scrape run when an immediate scrape cannot start yet', async () => {
+    mockGetTrackedProduct.mockResolvedValue({ id: TRACKED_PRODUCT_ID, active: true });
+    mockStartActiveTrackedProductScrapeJob.mockReturnValue({ runId: 'active-run', started: false });
+
+    const response = await request(app)
+      .post(`/api/tracked-products/${TRACKED_PRODUCT_ID}/scrape`)
+      .expect(202);
+
+    expect(response.body).toEqual({ ok: true, runId: 'active-run', status: 'already_running' });
+  });
+
   test('downloads the complete public scrape history as a CSV attachment', async () => {
     const csv =
       'product_id,product_name,selected_option,timestamp,price,stock,outcome\r\n' +
@@ -125,6 +161,22 @@ describe('public shared tracked-product API', () => {
     );
     expect(response.text).toBe(csv);
     expect(mockExportTrackedProductHistory).toHaveBeenCalledWith(TRACKED_PRODUCT_ID);
+  });
+
+  test('downloads one CSV with the scrape history for every tracked product', async () => {
+    const csv =
+      'product_id,product_name,selected_option,timestamp,price,stock,outcome\r\n' +
+      '2037,Halvard Headlamp One,Duo,2026-09-26T12:00:00.000Z,18145.5000,12,success\r\n';
+    mockExportAllTrackedProductsHistory.mockResolvedValue({ csv });
+
+    const response = await request(app).get('/api/tracked-products/export').expect(200);
+
+    expect(response.headers['content-type']).toMatch(/^text\/csv; charset=utf-8/);
+    expect(response.headers['content-disposition']).toBe(
+      'attachment; filename="all-tracked-products-scrape-history.csv"'
+    );
+    expect(response.text).toBe(csv);
+    expect(mockExportAllTrackedProductsHistory).toHaveBeenCalledWith();
   });
 
   test('validates export tracked-product IDs before calling the service', async () => {
