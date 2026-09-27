@@ -1,3 +1,33 @@
+@import "tailwindcss";
+
+/* ─── Design tokens ─────────────────────────────────────────────────────────── */
+/* All colour values are exposed as Tailwind utilities via @theme.              */
+/* Use text-brand-*, bg-brand-*, border-brand-* in components.                 */
+
+@theme {
+  --color-brand-text:           #23303c;
+  --color-brand-heading:        #12212e;
+  --color-brand-muted:          #61707d;
+  --color-brand-surface:        #ffffff;
+  --color-brand-input:          #ffffff;
+  --color-brand-subtle:         #f2f5f8;
+  --color-brand-border:         #dce3e9;
+  --color-brand-border-strong:  #c4d0da;
+  --color-brand-accent:         #176b87;
+  --color-brand-accent-strong:  #0e5269;
+  --color-brand-accent-light:   #83c4d4;
+  --color-brand-accent-soft:    #e8f5f7;
+  --color-brand-focus:          rgb(23 107 135 / 0.35);
+  --color-brand-error:          #9b2c2c;
+  --color-brand-error-bg:       #fff1f1;
+  --color-brand-info:           #14556d;
+  --color-brand-info-bg:        #edf8fb;
+  --color-brand-success:        #14613d;
+  --color-brand-success-bg:     #edf9f1;
+}
+
+/* ─── Base ───────────────────────────────────────────────────────────────────── */
+
 :root {
   color: #23303c;
   background: #f6f8fb;
@@ -6,26 +36,6 @@
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-
-  --text: #23303c;
-  --heading: #12212e;
-  --muted: #61707d;
-  --surface: #ffffff;
-  --input: #ffffff;
-  --subtle: #f2f5f8;
-  --border: #dce3e9;
-  --border-strong: #c4d0da;
-  --accent: #176b87;
-  --accent-strong: #0e5269;
-  --accent-light: #83c4d4;
-  --accent-soft: #e8f5f7;
-  --focus: rgb(23 107 135 / 0.35);
-  --error: #9b2c2c;
-  --error-background: #fff1f1;
-  --info: #14556d;
-  --info-background: #edf8fb;
-  --success: #14613d;
-  --success-background: #edf9f1;
 }
 
 * {
@@ -36,4 +46,14 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
+}
+
+/* ─── Component overrides ────────────────────────────────────────────────────── */
+
+/* Custom chevron for the sort <select> — cannot be done with a Tailwind utility */
+.sort-select {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%2361707d' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
 }

@@ -38,6 +38,10 @@ export function listTrackedProducts() {
   return request('/api/tracked-products')
 }
 
+export function getTrackedProduct(trackedProductId) {
+  return request(`/api/tracked-products/${encodeURIComponent(trackedProductId)}`)
+}
+
 export function getTrackedProductHistory(trackedProductId) {
   return request(`/api/tracked-products/${encodeURIComponent(trackedProductId)}/history`)
 }

@@ -139,12 +139,14 @@ describe('scrape persistence service', () => {
       .mockRejectedValueOnce(new QuoteScraperError('SCRAPE_TIMEOUT', 'Timed out waiting for a quote'))
       .mockResolvedValueOnce({ price: 18145.5, stock: 12 });
     const saveAttempt = jest.fn(async (record) => ({ id: `row-${record.attempt_number}`, ...record }));
+    const updateLastScrape = jest.fn().mockResolvedValue({});
 
     const result = await scrapeAndPersistTrackedProduct(TRACKED_PRODUCT, {
       runId: 'run-service',
       scrapeQuote,
       sleep: jest.fn().mockResolvedValue(),
       saveAttempt,
+      updateLastScrape,
     });
 
     expect(result).toMatchObject({ runId: 'run-service', outcome: 'success' });
@@ -163,5 +165,51 @@ describe('scrape persistence service', () => {
         outcome: 'success',
       }),
     ]);
+  });
+
+  test('writes last_price and last_stock to the tracking row on a successful scrape', async () => {
+    const scrapeQuote = jest.fn().mockResolvedValueOnce({ price: 18145.5, stock: 12 });
+    const saveAttempt = jest.fn(async (record) => ({ id: 'row-1', ...record }));
+    const updateLastScrape = jest.fn().mockResolvedValue({});
+
+    await scrapeAndPersistTrackedProduct(TRACKED_PRODUCT, {
+      runId: 'run-cache-success',
+      scrapeQuote,
+      sleep: jest.fn().mockResolvedValue(),
+      saveAttempt,
+      updateLastScrape,
+    });
+
+    expect(updateLastScrape).toHaveBeenCalledTimes(1);
+    expect(updateLastScrape).toHaveBeenCalledWith(
+      TRACKED_PRODUCT.id,
+      expect.objectContaining({ price: 18145.5, stock: 12 })
+    );
+  });
+
+  test('writes only last_scraped_at (preserving previous price) on a failed scrape', async () => {
+    const scrapeQuote = jest
+      .fn()
+      .mockRejectedValue(new QuoteScraperError('SCRAPE_VALIDATION_ERROR', 'Bad price'));
+    const saveAttempt = jest.fn(async (record) => ({ id: 'row-fail', ...record }));
+    const updateLastScrape = jest.fn().mockResolvedValue({});
+
+    await scrapeAndPersistTrackedProduct(TRACKED_PRODUCT, {
+      runId: 'run-cache-failure',
+      scrapeQuote,
+      sleep: jest.fn().mockResolvedValue(),
+      saveAttempt,
+      updateLastScrape,
+    });
+
+    expect(updateLastScrape).toHaveBeenCalledTimes(1);
+    // price and stock must be null on failure — the repo will not overwrite previous values
+    expect(updateLastScrape).toHaveBeenCalledWith(
+      TRACKED_PRODUCT.id,
+      expect.objectContaining({ price: null, stock: null })
+    );
+    // scrapedAt must be set so "Not yet checked" clears after the first attempt
+    const [, payload] = updateLastScrape.mock.calls[0];
+    expect(typeof payload.scrapedAt).toBe('string');
   });
 });

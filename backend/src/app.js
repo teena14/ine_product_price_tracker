@@ -21,9 +21,26 @@ app.use((req, res, next) => {
 
 // --- Security middleware ---
 app.use(helmet());
+
+// CORS is driven entirely by the FRONTEND_URL environment variable.
+// In local development set FRONTEND_URL=http://localhost:5173 in your .env file.
+// In production set it to the deployed frontend origin (e.g. https://your-app.vercel.app).
+// No origins are hardcoded so production never leaks a dev address and vice versa.
+const allowedOrigins = new Set(
+  (process.env.FRONTEND_URL || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+);
+
 app.use(
   cors({
-    origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+    origin: (origin, callback) => {
+      // Allow requests with no origin (curl, Postman, server-to-server)
+      if (!origin) return callback(null, true);
+      if (allowedOrigins.has(origin)) return callback(null, true);
+      callback(new Error(`CORS: origin '${origin}' is not allowed`));
+    },
     methods: ['GET', 'POST'],
     allowedHeaders: ['Content-Type', 'Authorization'],
   })

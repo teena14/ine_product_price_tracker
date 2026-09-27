@@ -1,4 +1,5 @@
 import { saveScrapeAttempt, validateScrapeAttempt } from '../repositories/scrapeAttemptsRepository.js';
+import { updateTrackedProductLastScrape } from '../repositories/trackedProductsRepository.js';
 import { scrapeQuoteWithRetries } from '../scraper/scrapeRetryPolicy.js';
 
 function requireNonEmptyString(value, fieldName) {
@@ -77,8 +78,13 @@ export async function persistScrapeAttempts(
 
 /**
  * Scrapes one already-persisted tracking record, then appends the full retry
- * history. It does not load active products or expose an HTTP endpoint; the
- * scheduler orchestration remains Phase 9 work.
+ * history and updates the denormalized cache columns on the tracking row so
+ * the dashboard list always reflects the latest observed price and stock.
+ *
+ * Cache update behaviour:
+ *   - Success: last_price, last_stock, and last_scraped_at are all written.
+ *   - Failure: only last_scraped_at is written so the last known-good price
+ *     remains visible on the card until the scraper succeeds again.
  */
 export async function scrapeAndPersistTrackedProduct(
   trackedProduct,
@@ -89,6 +95,7 @@ export async function scrapeAndPersistTrackedProduct(
     sleep,
     now,
     saveAttempt = saveScrapeAttempt,
+    updateLastScrape = updateTrackedProductLastScrape,
   } = {}
 ) {
   validateTrackedProduct(trackedProduct);
@@ -104,5 +111,15 @@ export async function scrapeAndPersistTrackedProduct(
     saveAttempt,
   });
 
+  // Always stamp last_scraped_at so "Not yet checked" clears after the first
+  // attempt regardless of outcome. Only propagate price/stock on success.
+  const successQuote = scrapeResult.outcome === 'success' ? scrapeResult.quote : null;
+  await updateLastScrape(trackedProduct.id, {
+    price: successQuote?.price ?? null,
+    stock: successQuote?.stock ?? null,
+    scrapedAt: new Date().toISOString(),
+  });
+
   return { ...scrapeResult, persistedAttempts };
 }
+

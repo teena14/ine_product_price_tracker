@@ -94,3 +94,40 @@ export async function getTrackedProductById(id) {
 
   return data;
 }
+
+/**
+ * Updates the denormalized cache columns on tracked_products after each scrape
+ * attempt so the dashboard list can display the latest price and stock without
+ * an extra join. Called unconditionally after every attempt so that
+ * last_scraped_at always reflects the most recent check, even on failures.
+ *
+ * On a successful scrape:  last_price + last_stock are updated.
+ * On a failed scrape:      only last_scraped_at is updated (price/stock keep
+ *                          their previous values so users still see the last
+ *                          known good price while it remains reliable).
+ */
+export async function updateTrackedProductLastScrape(id, { price, stock, scrapedAt }) {
+  const supabase = getSupabaseClient();
+
+  const patch = { last_scraped_at: scrapedAt ?? new Date().toISOString() };
+
+  // Only overwrite price/stock on a successful scrape (both must be present)
+  if (price != null && stock != null) {
+    patch.last_price = price;
+    patch.last_stock = stock;
+  }
+
+  const { data, error } = await supabase
+    .from('tracked_products')
+    .update(patch)
+    .eq('id', id)
+    .select()
+    .single();
+
+  if (error) {
+    throw databaseError('updating last scrape cache on tracked product', error);
+  }
+
+  return data;
+}
+
