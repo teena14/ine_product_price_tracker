@@ -199,17 +199,21 @@ Authorization: Bearer <CRON_SECRET>
 ```
 
 The backend flow:
-1. Authenticates the request
-2. Loads all active tracked products
-3. Scrapes each product independently with Playwright
-4. Persists results (success or failure) to Supabase
-5. Returns a run summary
+1. Authenticates the request.
+2. Starts one background scrape run and immediately returns `202 Accepted`.
+3. Loads only records whose `tracked_products.active` value is `true`.
+4. Scrapes each active product independently and appends every retry, success,
+   or final failure to `scrape_attempts`.
+5. Updates each successfully scraped product's cached price/stock and every
+   attempted product's `last_scraped_at`, which the dashboard reads.
 
-The endpoint returns only a summary such as `runId`, `total`, `successful`,
-and `failed`; detailed scraper errors remain in the append-only scrape log and
-server logs. An invalid/missing `CRON_SECRET` returns `401` and starts no
-scrape. Configure the cron provider manually after deployment with the
-production Render URL and an environment-only secret.
+The acknowledgement contains `{ ok, runId, status }`, where `status` is
+`started` or `already_running`. The latter prevents an overlapping cron
+delivery from creating a duplicate run on the same Render instance. Detailed
+outcomes remain in the append-only scrape log and server logs. An invalid or
+missing `CRON_SECRET` returns `401` and starts no scrape. Configure the cron
+provider manually after deployment with the production Render URL and an
+environment-only secret.
 
 ---
 

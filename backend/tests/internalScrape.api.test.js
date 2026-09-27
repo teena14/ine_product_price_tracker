@@ -1,10 +1,10 @@
 import { jest } from '@jest/globals';
 import request from 'supertest';
 
-const mockRunActiveTrackedProductScrape = jest.fn();
+const mockStartActiveTrackedProductScrapeJob = jest.fn();
 
-jest.unstable_mockModule('../src/services/scrapeRunService.js', () => ({
-  runActiveTrackedProductScrape: mockRunActiveTrackedProductScrape,
+jest.unstable_mockModule('../src/services/scrapeJobService.js', () => ({
+  startActiveTrackedProductScrapeJob: mockStartActiveTrackedProductScrapeJob,
 }));
 
 const { default: app } = await import('../src/app.js');
@@ -32,7 +32,7 @@ describe('POST /internal/scrape', () => {
       message: 'Invalid or missing cron secret',
       details: [],
     });
-    expect(mockRunActiveTrackedProductScrape).not.toHaveBeenCalled();
+    expect(mockStartActiveTrackedProductScrapeJob).not.toHaveBeenCalled();
   });
 
   test('rejects an incorrect cron bearer secret before starting a scrape', async () => {
@@ -41,7 +41,7 @@ describe('POST /internal/scrape', () => {
       .set('Authorization', 'Bearer incorrect-secret')
       .expect(401);
 
-    expect(mockRunActiveTrackedProductScrape).not.toHaveBeenCalled();
+    expect(mockStartActiveTrackedProductScrapeJob).not.toHaveBeenCalled();
   });
 
   test('does not trigger a scrape when the server cron secret is absent', async () => {
@@ -52,34 +52,48 @@ describe('POST /internal/scrape', () => {
       .set('Authorization', 'Bearer test-cron-secret')
       .expect(401);
 
-    expect(mockRunActiveTrackedProductScrape).not.toHaveBeenCalled();
+    expect(mockStartActiveTrackedProductScrapeJob).not.toHaveBeenCalled();
   });
 
-  test('returns a safe run summary to an authenticated cron request', async () => {
-    mockRunActiveTrackedProductScrape.mockResolvedValue({
+  test('accepts an authenticated cron trigger without waiting for the scrape run', async () => {
+    mockStartActiveTrackedProductScrapeJob.mockReturnValue({
       runId: 'run-123',
-      total: 3,
-      successful: 2,
-      failed: 1,
-      results: [{ errorCode: 'SCRAPE_TIMEOUT', internalOnly: true }],
+      started: true,
     });
 
     const response = await request(app)
       .post('/internal/scrape')
       .set('Authorization', 'Bearer test-cron-secret')
-      .expect(200);
+      .expect(202);
 
     expect(response.body).toEqual({
+      ok: true,
       runId: 'run-123',
-      total: 3,
-      successful: 2,
-      failed: 1,
+      status: 'started',
     });
-    expect(mockRunActiveTrackedProductScrape).toHaveBeenCalledWith();
+    expect(mockStartActiveTrackedProductScrapeJob).toHaveBeenCalledWith();
+  });
+
+  test('acknowledges an overlapping authenticated trigger without starting a second job', async () => {
+    mockStartActiveTrackedProductScrapeJob.mockReturnValue({
+      runId: 'run-123',
+      started: false,
+    });
+
+    const response = await request(app)
+      .post('/internal/scrape')
+      .set('Authorization', 'Bearer test-cron-secret')
+      .expect(202);
+
+    expect(response.body).toEqual({
+      ok: true,
+      runId: 'run-123',
+      status: 'already_running',
+    });
   });
 
   test('does not expose an unauthenticated GET scrape trigger', async () => {
     await request(app).get('/internal/scrape').expect(404);
-    expect(mockRunActiveTrackedProductScrape).not.toHaveBeenCalled();
+    expect(mockStartActiveTrackedProductScrapeJob).not.toHaveBeenCalled();
   });
 });

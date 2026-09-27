@@ -18,6 +18,8 @@ const TH_CLASS =
 const TD_CLASS =
   'border-b border-brand-border px-3.5 py-3 text-left align-top text-sm text-brand-text'
 
+const TRACKING_REFRESH_INTERVAL_MS = 60_000
+
 // ─── Shared layout primitives ─────────────────────────────────────────────────
 
 const PAGE_CLASS = 'w-[min(100%-32px,960px)] mx-auto pt-10 sm:pt-16 pb-20'
@@ -78,15 +80,34 @@ export function TrackPage() {
   useEffect(() => {
     if (!productId) return
     loadHistory()
+
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === 'visible') {
+        loadHistory({ background: true })
+      }
+    }
+
+    const intervalId = window.setInterval(refreshWhenVisible, TRACKING_REFRESH_INTERVAL_MS)
+    document.addEventListener('visibilitychange', refreshWhenVisible)
+
+    return () => {
+      window.clearInterval(intervalId)
+      document.removeEventListener('visibilitychange', refreshWhenVisible)
+    }
   }, [productId])
 
-  async function loadHistory() {
-    setHistoryState({ status: 'loading', data: null, error: '' })
+  async function loadHistory({ background = false } = {}) {
+    if (!background) {
+      setHistoryState({ status: 'loading', data: null, error: '' })
+    }
+
     try {
       const data = await getTrackedProductHistory(productId)
       setHistoryState({ status: 'success', data, error: '' })
     } catch (error) {
-      setHistoryState({ status: 'error', data: null, error: error.message })
+      if (!background) {
+        setHistoryState({ status: 'error', data: null, error: error.message })
+      }
     }
   }
 
