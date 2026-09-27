@@ -25,6 +25,7 @@ export function formatRelativeTime(value) {
 }
 
 export function formatPrice(value) {
+  if (value == null) return '—'
   const price = Number(value)
   if (!Number.isFinite(price)) return '—'
   return new Intl.NumberFormat('en-IN', {

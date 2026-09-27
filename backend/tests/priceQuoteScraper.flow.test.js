@@ -25,7 +25,14 @@ function createTimeoutError() {
   return error;
 }
 
-function createPage({ gotoError, offerFailed = false, ignoredStartClicks = 0, cookieConsent = false } = {}) {
+function createPage({
+  gotoError,
+  offerFailed = false,
+  ignoredStartClicks = 0,
+  disabledCheckPriceWaits = 0,
+  cookieConsent = false,
+  cookieConsentNeverDismisses = false,
+} = {}) {
   const uiManifest = {
     priceTag: 'strong',
     classes: { priceValue: 'amt-h8' },
@@ -43,13 +50,24 @@ function createPage({ gotoError, offerFailed = false, ignoredStartClicks = 0, co
     waitFor: jest.fn().mockResolvedValue(),
     click: jest.fn().mockResolvedValue(),
   };
-  const priceControl = { click: jest.fn().mockResolvedValue() };
+  const priceControl = {
+    click: jest.fn().mockResolvedValue(),
+    hover: jest.fn().mockResolvedValue(),
+  };
   let cookieConsentVisible = cookieConsent;
   const cookieConsentButton = {
     first: jest.fn(),
     isVisible: jest.fn().mockImplementation(() => Promise.resolve(cookieConsentVisible)),
     click: jest.fn().mockImplementation(async () => {
       cookieConsentVisible = false;
+    }),
+    waitFor: jest.fn().mockImplementation(async ({ state }) => {
+      if (state === 'visible' && !cookieConsentVisible) {
+        throw createTimeoutError();
+      }
+      if (state === 'hidden' && cookieConsentNeverDismisses) {
+        throw createTimeoutError();
+      }
     }),
   };
   cookieConsentButton.first.mockReturnValue(cookieConsentButton);
@@ -63,6 +81,7 @@ function createPage({ gotoError, offerFailed = false, ignoredStartClicks = 0, co
   const price = { innerText: jest.fn().mockResolvedValue('₹18,145.50') };
   const stock = { innerText: jest.fn().mockResolvedValue('Available (12)') };
   let remainingIgnoredStartClicks = ignoredStartClicks;
+  let remainingDisabledCheckPriceWaits = disabledCheckPriceWaits;
   const page = {
     close: jest.fn().mockResolvedValue(),
     goto: gotoError ? jest.fn().mockRejectedValue(gotoError) : jest.fn().mockResolvedValue(),
@@ -85,6 +104,10 @@ function createPage({ gotoError, offerFailed = false, ignoredStartClicks = 0, co
     mouse: { move: jest.fn().mockResolvedValue() },
     setDefaultTimeout: jest.fn(),
     waitForFunction: jest.fn().mockImplementation((_predicate, options = {}) => {
+      if (options.timeout === 30_000 && remainingDisabledCheckPriceWaits > 0) {
+        remainingDisabledCheckPriceWaits -= 1;
+        return Promise.reject(createTimeoutError());
+      }
       if (options.timeout === 2_000 && remainingIgnoredStartClicks > 0) {
         remainingIgnoredStartClicks -= 1;
         return Promise.reject(createTimeoutError());
@@ -146,7 +169,8 @@ describe('Playwright quote workflow', () => {
     });
     expect(optionButton.click).toHaveBeenCalledWith();
     expect(page.mouse.move).toHaveBeenCalledTimes(10);
-    expect(priceControl.click).toHaveBeenCalledWith();
+    expect(priceControl.hover).toHaveBeenCalledWith({ timeout: 20_000 });
+    expect(priceControl.click).toHaveBeenCalledWith({ timeout: 5_000 });
     expect(page.waitForResponse).toHaveBeenCalledWith(expect.any(Function), { timeout: 20_000 });
     expect(page.waitForResponse).toHaveBeenCalledTimes(2);
     expect(page.close).toHaveBeenCalledTimes(1);
@@ -155,7 +179,7 @@ describe('Playwright quote workflow', () => {
     expect(browser.close).toHaveBeenCalledTimes(1);
   });
 
-  test('dismisses an early cookie-consent prompt before interacting with the price panel', async () => {
+  test('accepts an early cookie-consent prompt and waits for it to close before price interaction', async () => {
     const { cookieConsentButton, page } = createPage({ cookieConsent: true });
     configureBrowser(page);
 
@@ -166,6 +190,9 @@ describe('Playwright quote workflow', () => {
 
     expect(cookieConsentButton.click).toHaveBeenCalledTimes(1);
     expect(cookieConsentButton.click).toHaveBeenCalledWith({ timeout: 2_000 });
+    expect(cookieConsentButton.waitFor).toHaveBeenCalledWith({ state: 'visible', timeout: 10_000 });
+    expect(cookieConsentButton.waitFor).toHaveBeenCalledWith({ state: 'hidden', timeout: 10_000 });
+    expect(page.getByRole.mock.calls[0][1].name.test('Allow all cookies')).toBe(true);
   });
 
   test('maps browser navigation timeouts and still closes the page', async () => {
@@ -179,6 +206,16 @@ describe('Playwright quote workflow', () => {
       name: 'QuoteScraperError',
     });
     expect(page.close).toHaveBeenCalledTimes(1);
+  });
+
+  test('identifies a cookie popup that does not close after Allow is clicked', async () => {
+    const { page } = createPage({ cookieConsent: true, cookieConsentNeverDismisses: true });
+    configureBrowser(page);
+
+    await expect(scrapeCurrentQuote({ productId: '2037', optionId: 'o2' })).rejects.toMatchObject({
+      code: 'SCRAPE_TIMEOUT',
+      message: 'Timed out waiting for the cookie-consent popup to disappear',
+    });
   });
 
   test('turns the store failed-quote state into a retryable quote error', async () => {
@@ -203,5 +240,20 @@ describe('Playwright quote workflow', () => {
 
     expect(priceControl.click).toHaveBeenCalledTimes(2);
     expect(page.mouse.move).toHaveBeenCalledTimes(20);
+  });
+
+  test('retries a slow disabled Check price control on the same page after 30 seconds', async () => {
+    const { page, priceControl } = createPage({ disabledCheckPriceWaits: 1 });
+    configureBrowser(page);
+
+    await expect(scrapeCurrentQuote({ productId: '2037', optionId: 'o2' })).resolves.toEqual({
+      price: 18145.5,
+      stock: 12,
+    });
+
+    expect(priceControl.hover).toHaveBeenCalledTimes(2);
+    expect(priceControl.click).toHaveBeenCalledTimes(1);
+    expect(page.waitForFunction).toHaveBeenCalledWith(expect.any(Function), { timeout: 30_000 });
+    expect(page.close).toHaveBeenCalledTimes(1);
   });
 });

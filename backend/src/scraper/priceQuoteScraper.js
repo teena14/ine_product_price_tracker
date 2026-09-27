@@ -7,18 +7,17 @@ const NAVIGATION_TIMEOUT_MS = 20_000;
 const QUOTE_TIMEOUT_MS = 35_000;
 const QUOTE_START_TIMEOUT_MS = 2_000;
 const QUOTE_START_MAX_ATTEMPTS = 5;
-const COOKIE_CONSENT_TIMEOUT_MS = 2_000;
-const LATE_COOKIE_CONSENT_TIMEOUT_MS = 500;
+const CHECK_PRICE_ENABLE_TIMEOUT_MS = 30_000;
+const CHECK_PRICE_CLICK_TIMEOUT_MS = 5_000;
+const COOKIE_CONSENT_TIMEOUT_MS = 10_000;
 const COOKIE_CONSENT_CLICK_TIMEOUT_MS = 2_000;
+const COOKIE_CONSENT_DISMISS_TIMEOUT_MS = 10_000;
 const MIN_POINTER_MOVES = 10;
 const POINTER_MOVE_DELAY_MS = 75;
 const UI_MANIFEST_PATH = '/api/v2/ui/manifest';
 const SAFE_HTML_TAG = /^[a-z][a-z0-9-]*$/i;
 const SAFE_CLASS_TOKEN = /^[a-z_-][a-z0-9_-]*$/i;
-const COOKIE_CONSENT_BUTTON_NAMES = Object.freeze([
-  /^(?:reject|reject all|decline|decline all|necessary only|no thanks)$/i,
-  /^(?:accept|accept all|allow all|agree|i agree|ok)$/i,
-]);
+const COOKIE_ALLOW_BUTTON_NAME = /^(?:allow|accept)(?: all)?(?: cookies)?$|^(?:agree|i agree|ok)$/i;
 
 let browserPromise;
 
@@ -206,32 +205,35 @@ async function navigateToProductAndLoadUiManifest(page, productId) {
 }
 
 /**
- * The store may show a cookie-consent prompt shortly after navigation. Check
- * for its explicit button labels in parallel, so a normal run without a
- * banner incurs only one short bounded wait. Rejecting is preferred when the
- * banner offers both choices; accepting remains a fallback for banners that
- * expose only that action.
+ * The store may show a cookie-consent prompt shortly after navigation. Wait
+ * for its Allow/Accept control, then confirm that control disappears before
+ * sending any price-flow interaction to the page.
  */
 async function dismissCookieConsent(page, timeoutMs) {
-  const candidates = COOKIE_CONSENT_BUTTON_NAMES.map((name) =>
-    page.getByRole('button', { name }).first()
-  );
-  const visibility = await Promise.all(
-    candidates.map(async (button) => {
-      try {
-        return (await button.isVisible({ timeout: timeoutMs })) ? button : null;
-      } catch {
-        return null;
-      }
-    })
-  );
-  const button = visibility.find(Boolean);
+  const button = page.getByRole('button', { name: COOKIE_ALLOW_BUTTON_NAME }).first();
 
-  if (!button) {
-    return false;
+  try {
+    await button.waitFor({ state: 'visible', timeout: timeoutMs });
+  } catch (error) {
+    if (error.name === 'TimeoutError') {
+      return false;
+    }
+    throw error;
   }
 
   await button.click({ timeout: COOKIE_CONSENT_CLICK_TIMEOUT_MS });
+  try {
+    await button.waitFor({ state: 'hidden', timeout: COOKIE_CONSENT_DISMISS_TIMEOUT_MS });
+  } catch (error) {
+    if (error.name === 'TimeoutError') {
+      throw new QuoteScraperError(
+        'SCRAPE_TIMEOUT',
+        'Timed out waiting for the cookie-consent popup to disappear',
+        error
+      );
+    }
+    throw error;
+  }
   return true;
 }
 
@@ -267,21 +269,31 @@ async function satisfyPriceInteraction(page) {
 
   for (let startAttempt = 1; startAttempt <= QUOTE_START_MAX_ATTEMPTS; startAttempt += 1) {
     // The mock store requires several distinct mouse moves and a dwell period.
-    // Its click wrapper can also intentionally drop one trusted click, so every
-    // bounded start attempt repeats the genuine browser interaction.
+    // Hover the disabled Check price control only after completing that motion.
+    // If the store enables it slowly, retry this same-page interaction rather
+    // than closing the page and starting the full product scrape again.
     for (let step = 0; step < MIN_POINTER_MOVES; step += 1) {
       await page.mouse.move(box.x + 16 + step * 12, box.y + 16 + (step % 3) * 8);
       await page.waitForTimeout(POINTER_MOVE_DELAY_MS);
     }
+    await priceControl.hover({ timeout: NAVIGATION_TIMEOUT_MS });
 
-    await page.waitForFunction(
-      () => {
-        const button = document.querySelector('.offer-panel button.ctl-main');
-        return Boolean(button && !button.disabled);
-      },
-      { timeout: NAVIGATION_TIMEOUT_MS }
-    );
-    await priceControl.click();
+    try {
+      await page.waitForFunction(
+        () => {
+          const button = document.querySelector('.offer-panel button.ctl-main');
+          return Boolean(button && !button.disabled);
+        },
+        { timeout: CHECK_PRICE_ENABLE_TIMEOUT_MS }
+      );
+    } catch (error) {
+      if (error.name === 'TimeoutError' && startAttempt < QUOTE_START_MAX_ATTEMPTS) {
+        continue;
+      }
+      throw error;
+    }
+
+    await priceControl.click({ timeout: CHECK_PRICE_CLICK_TIMEOUT_MS });
 
     try {
       await page.waitForFunction(
@@ -340,10 +352,6 @@ export async function scrapeCurrentQuote({ productId, optionId }) {
     const uiManifest = await navigateToProductAndLoadUiManifest(page, productId);
     await dismissCookieConsent(page, COOKIE_CONSENT_TIMEOUT_MS);
     await selectOption(page, productId, optionId);
-    // A delayed consent prompt can otherwise obstruct the required trusted
-    // click. This short second check covers banners that arrive after the
-    // initial page load without adding a long delay to normal runs.
-    await dismissCookieConsent(page, LATE_COOKIE_CONSENT_TIMEOUT_MS);
     await satisfyPriceInteraction(page);
     await waitForQuote(page);
 
