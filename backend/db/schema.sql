@@ -1,6 +1,5 @@
--- INE Product Price Tracker - final database schema for Supabase/PostgreSQL.
--- For an existing Phase 0-5 database, run migration_harden_scrape_attempts.sql
--- once in the Supabase SQL editor before deploying this application version.
+-- INE Product Price Tracker - final production database schema for Supabase/PostgreSQL.
+-- Run in the Supabase SQL editor to initialize or update the application database.
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
@@ -15,9 +14,17 @@ CREATE TABLE IF NOT EXISTS tracked_products (
   option_id       TEXT NOT NULL,
   option_name     TEXT NOT NULL,
   active          BOOLEAN NOT NULL DEFAULT TRUE,
+  last_price      NUMERIC(12, 4),
+  last_stock      INTEGER,
+  last_scraped_at TIMESTAMPTZ,
   created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Ensure cache columns exist if applied to a pre-existing table
+ALTER TABLE tracked_products ADD COLUMN IF NOT EXISTS last_price NUMERIC(12, 4);
+ALTER TABLE tracked_products ADD COLUMN IF NOT EXISTS last_stock INTEGER;
+ALTER TABLE tracked_products ADD COLUMN IF NOT EXISTS last_scraped_at TIMESTAMPTZ;
 
 -- Business constraint, not merely a lookup optimization: one active shared
 -- tracking record exists per product + option across the public dashboard.

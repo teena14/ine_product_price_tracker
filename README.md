@@ -63,7 +63,7 @@ npm run dev               # starts on http://localhost:5173
 
 ### 4. Database schema
 
-For a new database, run `backend/db/schema.sql` in the Supabase SQL editor. For the existing Phase 0-5 schema, run `backend/db/migration_harden_scrape_attempts.sql` once after reviewing its duplicate-active-row preflight.
+Run `backend/db/schema.sql` in the Supabase SQL editor to create or update the application database tables, indexes, and triggers.
 
 ---
 
