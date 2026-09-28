@@ -16,7 +16,7 @@ export async function setTrackedProductFrequency(id, frequencyMinutes) {
   const supabase = getSupabaseClient();
 
   // Compute next_scrape_at when a custom frequency is set
-  const nextScrapeAt = frequencyMinutes != null
+  const nextScrapeAt = frequencyMinutes !== null && frequencyMinutes !== undefined
     ? new Date(Date.now() + frequencyMinutes * 60 * 1000).toISOString()
     : null;
 

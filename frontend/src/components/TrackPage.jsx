@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import {
   downloadTrackedProductHistoryCsv,
@@ -19,30 +19,30 @@ import {
 // ─── Shared table cell classes ─────────────────────────────────────────────────
 
 const TH_CLASS =
-  'border-b border-brand-border px-3.5 py-3 text-left align-top bg-brand-subtle text-brand-heading text-[0.78rem] tracking-[0.03em] uppercase font-bold'
+  'border-b border-brand-border px-3 py-2 text-left align-top bg-brand-surface-subtle text-brand-heading text-[0.68rem] tracking-wider uppercase font-bold'
 
 const TD_CLASS =
-  'border-b border-brand-border px-3.5 py-3 text-left align-top text-sm text-brand-text'
+  'border-b border-brand-border px-3 py-2 text-left align-middle text-xs text-brand-text font-medium'
 
 const TRACKING_REFRESH_INTERVAL_MS = 60_000
 
 // ─── Shared layout primitives ─────────────────────────────────────────────────
 
-const PAGE_CLASS = 'w-[min(100%-32px,960px)] mx-auto pt-5 sm:pt-8 pb-20'
+const PAGE_CLASS = 'min-h-screen bg-brand-canvas text-brand-text font-sans p-4 sm:p-6 lg:p-8 max-w-[1240px] mx-auto'
 
 const BACK_LINK_CLASS =
-  'text-brand-accent-strong inline-block text-[0.9rem] font-semibold mb-7 no-underline hover:underline focus-visible:outline-3 focus-visible:outline-brand-focus focus-visible:outline-offset-2'
+  'inline-flex items-center gap-1.5 text-xs font-bold text-brand-heading hover:text-brand-black bg-brand-surface border border-brand-border hover:bg-brand-surface-subtle px-3 py-1.5 rounded-lg transition-all shadow-2xs mb-4 cursor-pointer no-underline'
 
 const BTN_SECONDARY_CLASS =
-  'bg-brand-surface border border-brand-border-strong text-brand-accent-strong font-semibold rounded-[9px] px-4 py-[11px] cursor-pointer hover:not-disabled:bg-brand-accent-soft hover:not-disabled:border-brand-accent transition-colors disabled:opacity-55 disabled:cursor-not-allowed text-sm focus-visible:outline-3 focus-visible:outline-brand-focus focus-visible:outline-offset-2'
+  'bg-brand-surface hover:bg-brand-surface-subtle border border-brand-border text-brand-heading font-bold rounded-lg px-3 py-1.5 cursor-pointer transition-all disabled:opacity-40 disabled:cursor-not-allowed text-xs shadow-2xs flex items-center gap-1.5'
 
 const BADGE_CLASS =
-  'rounded-full inline-block text-[0.75rem] font-bold px-[9px] py-1 text-center whitespace-nowrap'
+  'rounded-full inline-flex items-center text-[0.68rem] font-bold px-2 py-0.5 text-center whitespace-nowrap'
 
 const STATUS_BADGE_CLASS = {
-  success: 'bg-brand-success-bg text-brand-success',
-  failed: 'bg-brand-error-bg text-brand-error',
-  retried: 'bg-brand-info-bg text-brand-info',
+  success: 'bg-emerald-50 text-emerald-800 border border-emerald-200',
+  failed: 'bg-brand-error-bg text-brand-error border border-brand-error/20',
+  retried: 'bg-sky-50 text-sky-800 border border-sky-200',
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -50,15 +50,19 @@ const STATUS_BADGE_CLASS = {
 function BackLink() {
   return (
     <Link to="/" className={BACK_LINK_CLASS}>
-      ← Back to Tracked Products
+      <svg className="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <line x1="19" y1="12" x2="5" y2="12" />
+        <polyline points="12 19 5 12 12 5" />
+      </svg>
+      <span>Back to Dashboard</span>
     </Link>
   )
 }
 
 function StatusCard({ label, children }) {
   return (
-    <div className="bg-brand-surface border border-brand-border rounded-xl p-[18px_20px] flex flex-col gap-1.5 shadow-[0_2px_8px_rgb(25_39_52/0.04)]">
-      <span className="text-brand-muted text-[0.75rem] font-bold tracking-[0.05em] uppercase">{label}</span>
+    <div className="bg-brand-surface border border-brand-border rounded-xl p-3.5 sm:p-4 flex flex-col gap-1 card-elevation">
+      <span className="text-brand-muted text-[0.68rem] font-bold tracking-wider uppercase">{label}</span>
       {children}
     </div>
   )
@@ -66,9 +70,9 @@ function StatusCard({ label, children }) {
 
 function EmptyState({ title, children }) {
   return (
-    <div className="bg-brand-subtle rounded-[10px] p-7 text-left">
-      <h3 className="text-base font-bold text-brand-heading mb-1.5">{title}</h3>
-      <p className="text-brand-muted text-sm mt-0">{children}</p>
+    <div className="bg-brand-surface-subtle border border-brand-border rounded-xl p-6 sm:p-8 text-center">
+      <h3 className="text-sm font-bold text-brand-heading mb-1">{title}</h3>
+      <p className="text-brand-muted text-xs max-w-[380px] mx-auto m-0 leading-relaxed">{children}</p>
     </div>
   )
 }
@@ -95,8 +99,33 @@ export function TrackPage() {
   // Local override after frequency save so next_scrape_at shows immediately
   const [frequencyOverride, setFrequencyOverride] = useState(null)
 
+  const loadHistory = useCallback(async ({ background = false } = {}) => {
+    if (!background) {
+      setHistoryState({ status: 'loading', data: null, error: '' })
+    }
+
+    try {
+      const data = await getTrackedProductHistory(productId)
+      setHistoryState({ status: 'success', data, error: '' })
+    } catch (error) {
+      if (!background) {
+        setHistoryState({ status: 'error', data: null, error: error.message })
+      }
+    }
+  }, [productId])
+
+  const loadProductAlerts = useCallback(async () => {
+    try {
+      const data = await getTrackedProductAlerts(productId)
+      setProductAlerts(data.alerts ?? [])
+    } catch {
+      // non-critical
+    }
+  }, [productId])
+
   useEffect(() => {
     if (!productId) return
+    // oxlint-disable-next-line react/set-state-in-effect
     loadHistory()
     loadProductAlerts()
 
@@ -114,31 +143,7 @@ export function TrackPage() {
       window.clearInterval(intervalId)
       document.removeEventListener('visibilitychange', refreshWhenVisible)
     }
-  }, [productId])
-
-  async function loadHistory({ background = false } = {}) {
-    if (!background) {
-      setHistoryState({ status: 'loading', data: null, error: '' })
-    }
-
-    try {
-      const data = await getTrackedProductHistory(productId)
-      setHistoryState({ status: 'success', data, error: '' })
-    } catch (error) {
-      if (!background) {
-        setHistoryState({ status: 'error', data: null, error: error.message })
-      }
-    }
-  }
-
-  async function loadProductAlerts() {
-    try {
-      const data = await getTrackedProductAlerts(productId)
-      setProductAlerts(data.alerts ?? [])
-    } catch {
-      // non-critical
-    }
-  }
+  }, [productId, loadHistory, loadProductAlerts])
 
   useEffect(() => {
     if (manualScrapeState.status !== 'running' || !manualScrapeState.runId) return undefined
@@ -316,53 +321,64 @@ export function TrackPage() {
       </nav>
 
       {/* ── Product header ─────────────────────────────────────────────────── */}
-      <header className="flex flex-col sm:flex-row justify-between items-start w-full mb-8 gap-4 sm:gap-8">
+      <header className="flex flex-col sm:flex-row justify-between items-start w-full mb-5 gap-3 sm:gap-4 pb-4 border-b border-brand-border">
         <div>
-          <h1 className="text-[clamp(2.25rem,5vw,3.75rem)] font-bold tracking-[-0.045em] leading-[1.05] mb-2 text-brand-heading">
+          <h1 className="text-xl sm:text-2xl font-black tracking-tight mb-1 text-brand-heading">
             {trackedProduct.product_name}
           </h1>
-          <p className="text-brand-muted text-base mb-2.5">{trackedProduct.option_name}</p>
+          <p className="text-brand-muted text-xs sm:text-sm font-semibold m-0">{trackedProduct.option_name}</p>
         </div>
-        <div className="flex flex-col items-end gap-3 shrink-0">
+        <div className="flex flex-wrap items-center gap-2 shrink-0 self-start sm:self-auto">
           <a
             href={trackedProduct.product_url}
             target="_blank"
             rel="noreferrer"
-            className="text-brand-accent-strong text-[0.9rem] font-bold no-underline whitespace-nowrap hover:underline inline-block focus-visible:outline-3 focus-visible:outline-brand-focus focus-visible:outline-offset-2"
+            className="inline-flex items-center gap-1.5 text-brand-heading hover:text-brand-black text-xs font-bold bg-brand-surface border border-brand-border hover:bg-brand-surface-subtle px-3 py-1.5 rounded-lg transition-all shadow-2xs no-underline"
           >
-            View in store ↗
+            <span>View in store</span>
+            <span aria-hidden="true">→</span>
           </a>
           <button
             type="button"
             onClick={handleScrapeNow}
             disabled={manualScrapeState.status === 'loading' || manualScrapeState.status === 'running'}
-            className={BTN_SECONDARY_CLASS}
+            className="bg-brand-lime hover:bg-brand-lime-hover border border-brand-lime text-brand-black font-extrabold rounded-lg px-3.5 py-1.5 cursor-pointer transition-all shadow-xs text-xs active:scale-95 disabled:opacity-50 flex items-center gap-1.5"
           >
-            {manualScrapeState.status === 'loading' || manualScrapeState.status === 'running'
-              ? 'Scraping…'
-              : 'Scrape now'}
+            {manualScrapeState.status === 'loading' || manualScrapeState.status === 'running' ? (
+              <>
+                <span className="w-3.5 h-3.5 rounded-full border-2 border-brand-black border-t-transparent animate-spin inline-block" />
+                <span>Scraping…</span>
+              </>
+            ) : (
+              <>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" stroke="none" aria-hidden="true">
+                  <path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z" />
+                </svg>
+                <span>Scrape now</span>
+              </>
+            )}
           </button>
         </div>
       </header>
 
       {manualScrapeState.status === 'error' && (
-        <p className="rounded-[10px] mb-6 px-4 py-[13px] bg-brand-error-bg text-brand-error text-sm" role="alert">
+        <p className="rounded-xl mb-4 px-3.5 py-2 bg-brand-error-bg text-brand-error text-xs font-medium border border-brand-error/20" role="alert">
           {manualScrapeState.error}
         </p>
       )}
 
       {/* ── Status cards ───────────────────────────────────────────────────── */}
       <section
-        className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-7"
+        className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 mb-4"
         aria-label="Current tracking status"
       >
         <StatusCard label="Current Price">
           {currentPrice != null ? (
             <>
-              <span className="text-brand-heading text-[1.15rem] font-bold">{formatPrice(currentPrice)}</span>
+              <span className="text-brand-heading text-sm sm:text-base font-bold">{formatPrice(currentPrice)}</span>
               {priceChange !== null && (
                 <span
-                  className={`text-[0.82rem] font-semibold px-2 py-[3px] rounded-full w-fit ${priceChange < 0
+                  className={`text-[0.68rem] font-bold px-2 py-0.5 rounded-full w-fit ${priceChange < 0
                     ? 'bg-brand-success-bg text-brand-success'
                     : priceChange > 0
                       ? 'bg-brand-error-bg text-brand-error'
@@ -372,46 +388,46 @@ export function TrackPage() {
                   {priceChange === 0
                     ? 'No change'
                     : priceChange > 0
-                      ? `▲ ${formatPrice(priceChange)}`
-                      : `▼ ${formatPrice(Math.abs(priceChange))}`}
+                      ? `+${formatPrice(priceChange)}`
+                      : `-${formatPrice(Math.abs(priceChange))}`}
                 </span>
               )}
             </>
           ) : (
-            <span className="text-brand-muted font-normal text-base">—</span>
+            <span className="text-brand-muted font-normal text-xs">—</span>
           )}
         </StatusCard>
 
         <StatusCard label="Availability">
           {isAvailable !== null ? (
             <>
-              <span className="text-brand-heading text-[1.15rem] font-bold">
+              <span className="text-brand-heading text-sm sm:text-base font-bold">
                 {isAvailable ? 'In stock' : 'Out of stock'}
               </span>
               {currentStock != null && (
-                <span className="text-brand-muted text-[0.82rem]">{formatStock(currentStock)} units</span>
+                <span className="text-brand-muted text-[0.68rem]">{formatStock(currentStock)} units</span>
               )}
             </>
           ) : (
-            <span className="text-brand-muted font-normal text-base">Unknown</span>
+            <span className="text-brand-muted font-normal text-xs">Unknown</span>
           )}
         </StatusCard>
 
         <StatusCard label="Last Checked">
           {latestAttempt ? (
             <>
-              <span className="text-brand-heading text-[1.15rem] font-bold">
+              <span className="text-brand-heading text-sm sm:text-base font-bold">
                 {formatRelativeTime(latestAttempt.scraped_at)}
               </span>
-              <span className="text-brand-muted text-[0.82rem]">{formatTimestamp(latestAttempt.scraped_at)}</span>
+              <span className="text-brand-muted text-[0.68rem]">{formatTimestamp(latestAttempt.scraped_at)}</span>
             </>
           ) : (
-            <span className="text-brand-muted font-normal text-base">Not yet checked</span>
+            <span className="text-brand-muted font-normal text-xs">Not yet checked</span>
           )}
         </StatusCard>
 
         <StatusCard label="Tracking Status">
-          <span className="text-brand-heading text-[1.15rem] font-bold">
+          <span className="text-brand-heading text-sm sm:text-base font-bold">
             <span
               className={`${BADGE_CLASS} ${trackedProduct.active ? 'bg-brand-success-bg text-brand-success' : 'bg-brand-subtle text-brand-muted'
                 }`}
@@ -419,7 +435,7 @@ export function TrackPage() {
               {trackedProduct.active ? 'Active' : 'Paused'}
             </span>
           </span>
-          <span className="text-brand-muted text-[0.82rem]">
+          <span className="text-brand-muted text-[0.68rem]">
             {trackedProduct.scrape_frequency_minutes != null
               ? `Custom schedule · every ${trackedProduct.scrape_frequency_minutes} min`
               : 'Global schedule'}
@@ -429,8 +445,15 @@ export function TrackPage() {
 
       {/* ── Layout change warning ───────────────────────────────────────────── */}
       {trackedProduct.layout_changed_at && (
-        <div className="rounded-[10px] my-5 mb-6 px-4 py-[13px] bg-amber-50 text-amber-800 text-sm border border-amber-200" role="alert">
-          <strong>⚠️ Page structure changed</strong>{' '}
+        <div className="rounded-xl my-3 mb-4 px-3.5 py-2.5 bg-amber-50 text-amber-800 text-xs border border-amber-200" role="alert">
+          <strong className="inline-flex items-center gap-1">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" />
+              <line x1="12" y1="9" x2="12" y2="13" />
+              <line x1="12" y1="17" x2="12.01" y2="17" />
+            </svg>
+            Page structure changed
+          </strong>{' '}
           The store's page layout changed on{' '}
           <strong>{formatTimestamp(trackedProduct.layout_changed_at)}</strong>. The scraper selectors
           may need a review — check the Advanced Details section for recent errors.
@@ -439,7 +462,7 @@ export function TrackPage() {
 
       {/* ── Latest scrape failure alert ─────────────────────────────────────── */}
       {latestAttempt && latestAttempt.outcome !== 'success' && (
-        <div className="rounded-[10px] my-5 mb-6 px-4 py-[13px] bg-brand-error-bg text-brand-error text-sm" role="alert">
+        <div className="rounded-xl my-3 mb-4 px-3.5 py-2.5 bg-brand-error-bg text-brand-error text-xs border border-brand-error/20" role="alert">
           <strong>Last check failed:</strong>{' '}
           {latestAttempt.error_code}: {latestAttempt.error_message}
         </div>
@@ -448,30 +471,51 @@ export function TrackPage() {
       {/* ── Product-level alerts ────────────────────────────────────────────── */}
       {productAlerts.length > 0 && (
         <section
-          className="border border-brand-border rounded-2xl bg-brand-surface shadow-[0_2px_8px_rgb(25_39_52/0.04)] mt-4 mb-6 overflow-hidden"
+          className="border border-brand-border rounded-xl bg-brand-surface shadow-2xs mt-3 mb-4 overflow-hidden"
           aria-labelledby="product-alerts-heading"
         >
-          <div className="px-5 py-3 border-b border-brand-border bg-brand-subtle flex items-center justify-between">
-            <h2 id="product-alerts-heading" className="text-sm font-bold text-brand-heading m-0">
-              🔔 Recent Alerts
+          <div className="px-4 py-2.5 border-b border-brand-border bg-brand-subtle flex items-center justify-between">
+            <h2 id="product-alerts-heading" className="text-xs font-bold text-brand-heading m-0 flex items-center gap-1.5">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+                <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+              </svg>
+              Recent Alerts
             </h2>
-            <span className="text-brand-muted text-[0.8rem]">{productAlerts.length} alert{productAlerts.length === 1 ? '' : 's'}</span>
+            <span className="text-brand-muted text-[0.72rem]">{productAlerts.length} alert{productAlerts.length === 1 ? '' : 's'}</span>
           </div>
           <ul className="divide-y divide-brand-border list-none m-0 p-0">
             {productAlerts.slice(0, 5).map((alert) => (
-              <li key={alert.id} className="px-5 py-3 flex items-start gap-3">
-                <span className="text-base mt-0.5 shrink-0">
-                  {alert.alert_type === 'price_drop' ? '📉'
-                    : alert.alert_type === 'back_in_stock' ? '✅'
-                      : alert.alert_type === 'out_of_stock' ? '❌'
-                        : '⚠️'}
+              <li key={alert.id} className="px-4 py-2.5 flex items-start gap-2.5">
+                <span className="shrink-0 mt-0.5 text-brand-heading">
+                  {alert.alert_type === 'price_drop' ? (
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <polyline points="22 17 13.5 8.5 8.5 13.5 2 7" />
+                      <polyline points="16 17 22 17 22 11" />
+                    </svg>
+                  ) : alert.alert_type === 'back_in_stock' ? (
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <polyline points="20 6 9 17 4 12" />
+                    </svg>
+                  ) : alert.alert_type === 'out_of_stock' ? (
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <line x1="18" y1="6" x2="6" y2="18" />
+                      <line x1="6" y1="6" x2="18" y2="18" />
+                    </svg>
+                  ) : (
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" />
+                      <line x1="12" y1="9" x2="12" y2="13" />
+                      <line x1="12" y1="17" x2="12.01" y2="17" />
+                    </svg>
+                  )}
                 </span>
                 <div className="flex-1 min-w-0">
-                  <p className="text-brand-text text-sm m-0">{alert.message}</p>
-                  <span className="text-brand-muted text-[0.78rem]">{formatRelativeTime(alert.created_at)}</span>
+                  <p className="text-brand-text text-xs m-0">{alert.message}</p>
+                  <span className="text-brand-muted text-[0.68rem]">{formatRelativeTime(alert.created_at)}</span>
                 </div>
                 {!alert.read_at && (
-                  <span className="w-2 h-2 rounded-full bg-brand-accent shrink-0 mt-1.5" aria-label="Unread" />
+                  <span className="w-1.5 h-1.5 rounded-full bg-brand-accent shrink-0 mt-1" aria-label="Unread" />
                 )}
               </li>
             ))}
@@ -481,15 +525,15 @@ export function TrackPage() {
 
       {/* ── Price & Stock History ───────────────────────────────────────────── */}
       <section
-        className="border border-brand-border rounded-2xl bg-brand-surface shadow-[0_2px_8px_rgb(25_39_52/0.04)] mt-6 p-5 sm:p-7"
+        className="border border-brand-border rounded-xl bg-brand-surface card-elevation mt-3.5 p-4 sm:p-5"
         aria-labelledby="history-heading"
       >
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <h2 id="history-heading" className="text-xl font-bold tracking-[-0.02em] text-brand-heading mb-1">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <h2 id="history-heading" className="text-sm sm:text-base font-bold tracking-tight text-brand-heading mb-0">
             Price &amp; Stock History
           </h2>
           <div className="flex items-center gap-2 shrink-0 self-start sm:self-auto">
-            <span className="bg-brand-accent-soft text-brand-accent-strong rounded-full text-[0.75rem] font-bold px-[9px] py-1 text-center whitespace-nowrap">
+            <span className="bg-brand-lime text-brand-black rounded-full text-[0.68rem] font-black px-2.5 py-0.5 shadow-2xs">
               {successfulAttempts.length} observation{successfulAttempts.length === 1 ? '' : 's'}
             </span>
             <button
@@ -505,22 +549,24 @@ export function TrackPage() {
               aria-expanded={historyOpen}
               aria-controls="history-panel"
               onClick={() => setHistoryOpen((v) => !v)}
-              className="bg-transparent border-0 p-1 cursor-pointer text-brand-muted hover:text-brand-accent-strong transition-colors text-[0.75rem] leading-none focus-visible:outline-3 focus-visible:outline-brand-focus focus-visible:outline-offset-2"
+              className="bg-brand-surface-subtle hover:bg-brand-surface border border-brand-border p-1.5 rounded-lg cursor-pointer text-brand-heading transition-colors text-xs leading-none shadow-2xs flex items-center justify-center"
               aria-label={historyOpen ? 'Collapse history' : 'Expand history'}
             >
-              {historyOpen ? '▲' : '▼'}
+              <svg className={`w-3.5 h-3.5 transition-transform duration-200 ${historyOpen ? 'rotate-180' : ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
             </button>
           </div>
         </div>
 
         {exportState.status === 'error' && (
-          <p className="rounded-[10px] my-5 px-4 py-[13px] bg-brand-error-bg text-brand-error text-sm" role="alert">
+          <p className="rounded-xl my-3 px-3 py-2 bg-brand-error-bg text-brand-error text-xs font-medium border border-brand-error/20" role="alert">
             {exportState.error}
           </p>
         )}
 
         {historyOpen && (
-          <div id="history-panel" className="mt-4">
+          <div id="history-panel" className="mt-3.5">
             {successfulAttempts.length === 0 ? (
               <EmptyState title="No price observations yet">
                 No successful scrape has been recorded yet.
@@ -529,7 +575,7 @@ export function TrackPage() {
                   : ' The first scheduled or manual scrape will appear here.'}
               </EmptyState>
             ) : (
-              <div className="border border-brand-border rounded-[10px] overflow-x-auto ">
+              <div className="border border-brand-border rounded-lg overflow-x-auto shadow-2xs">
                 <table className="w-full min-w-[500px] border-collapse text-left">
                   <caption className="sr-only">Price and stock history</caption>
                   <thead>
@@ -541,9 +587,9 @@ export function TrackPage() {
                   </thead>
                   <tbody>
                     {[...successfulAttempts].reverse().map((attempt) => (
-                      <tr key={attempt.id}>
+                      <tr key={attempt.id} className="hover:bg-brand-surface-subtle/50 transition-colors">
                         <td className={TD_CLASS}>{formatTimestamp(attempt.scraped_at)}</td>
-                        <td className={TD_CLASS}>{formatPrice(attempt.price)}</td>
+                        <td className={`${TD_CLASS} font-bold text-brand-heading`}>{formatPrice(attempt.price)}</td>
                         <td className={TD_CLASS}>{formatStock(attempt.stock)}</td>
                       </tr>
                     ))}
@@ -557,19 +603,23 @@ export function TrackPage() {
 
       {/* ── Settings: Frequency + other controls ────────────────────────────── */}
       <section
-        className="border border-brand-border rounded-2xl bg-brand-subtle shadow-[0_2px_8px_rgb(25_39_52/0.04)] mt-6 p-5 sm:p-7"
+        className="border border-brand-border rounded-xl bg-brand-surface card-elevation mt-3.5 p-4 sm:p-5"
         aria-labelledby="settings-heading"
       >
         <button
           type="button"
           id="settings-heading"
-          className="w-full bg-transparent border-0 text-brand-heading cursor-pointer flex justify-between items-center text-left font-bold text-base gap-2 p-0 hover:text-brand-accent-strong focus-visible:outline-3 focus-visible:outline-brand-focus focus-visible:outline-offset-2"
+          className="w-full bg-transparent border-0 text-brand-heading cursor-pointer flex justify-between items-center text-left font-bold text-sm sm:text-base gap-2 p-0 hover:text-brand-black transition-colors"
           aria-expanded={settingsOpen}
           aria-controls="settings-panel"
           onClick={() => setSettingsOpen((v) => !v)}
         >
-          <span>Settings</span>
-          <span aria-hidden="true" className="text-brand-muted text-xs">{settingsOpen ? '▲' : '▼'}</span>
+          <span>Schedule &amp; Tracking Settings</span>
+          <span aria-hidden="true" className="text-brand-muted text-[0.7rem] bg-brand-surface-subtle border border-brand-border rounded-md p-1 flex items-center justify-center">
+            <svg className={`w-3 h-3 transition-transform duration-200 ${settingsOpen ? 'rotate-180' : ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="6 9 12 15 18 9" />
+            </svg>
+          </span>
         </button>
 
         {settingsOpen && (
@@ -584,45 +634,49 @@ export function TrackPage() {
 
       {/* ── Advanced Details (collapsible) ──────────────────────────────────── */}
       <section
-        className="border border-brand-border rounded-2xl bg-brand-subtle shadow-[0_2px_8px_rgb(25_39_52/0.04)] mt-6 p-5 sm:p-7"
+        className="border border-brand-border rounded-xl bg-brand-surface card-elevation mt-3.5 p-4 sm:p-5"
         aria-labelledby="advanced-heading"
       >
         <button
           type="button"
           id="advanced-heading"
-          className="w-full bg-transparent border-0 text-brand-heading cursor-pointer flex justify-between items-center text-left font-bold text-base gap-2 p-0 hover:text-brand-accent-strong focus-visible:outline-3 focus-visible:outline-brand-focus focus-visible:outline-offset-2"
+          className="w-full bg-transparent border-0 text-brand-heading cursor-pointer flex justify-between items-center text-left font-bold text-sm sm:text-base gap-2 p-0 hover:text-brand-black transition-colors"
           aria-expanded={advancedOpen}
           aria-controls="advanced-panel"
           onClick={() => setAdvancedOpen((v) => !v)}
         >
-          <span>Advanced Details</span>
-          <span aria-hidden="true" className="text-brand-muted text-xs">{advancedOpen ? '▲' : '▼'}</span>
+          <span>Advanced Details &amp; Scrape Log</span>
+          <span aria-hidden="true" className="text-brand-muted text-[0.7rem] bg-brand-surface-subtle border border-brand-border rounded-md p-1 flex items-center justify-center">
+            <svg className={`w-3 h-3 transition-transform duration-200 ${advancedOpen ? 'rotate-180' : ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="6 9 12 15 18 9" />
+            </svg>
+          </span>
         </button>
 
         {advancedOpen && (
-          <div id="advanced-panel">
-            <p className="text-brand-muted text-[0.82rem] mt-4 mb-0 leading-[1.8]">
+          <div id="advanced-panel" className="mt-3">
+            <p className="text-brand-muted text-xs mt-2 mb-3 leading-relaxed font-medium">
               Store product ID:{' '}
-              <code className="bg-brand-border rounded px-1.5 py-0.5 font-mono text-[0.8rem] text-brand-text">
+              <code className="bg-brand-surface-subtle border border-brand-border rounded px-1.5 py-0.5 font-mono text-[0.72rem] text-brand-heading font-bold">
                 {trackedProduct.product_id}
               </code>{' '}
               · Tracked ID:{' '}
-              <code className="bg-brand-border rounded px-1.5 py-0.5 font-mono text-[0.8rem] text-brand-text">
+              <code className="bg-brand-surface-subtle border border-brand-border rounded px-1.5 py-0.5 font-mono text-[0.72rem] text-brand-heading font-bold">
                 {trackedProduct.id}
               </code>{' '}
               · Added: {formatTimestamp(trackedProduct.created_at)}
               {trackedProduct.ui_manifest_hash && (
                 <>{' '}· Manifest hash:{' '}
-                  <code className="bg-brand-border rounded px-1.5 py-0.5 font-mono text-[0.8rem] text-brand-text">
+                  <code className="bg-brand-surface-subtle border border-brand-border rounded px-1.5 py-0.5 font-mono text-[0.72rem] text-brand-heading font-bold">
                     {trackedProduct.ui_manifest_hash}
                   </code>
                 </>
               )}
             </p>
 
-            <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-4 mt-5">
-              <h3 className="text-base font-bold text-brand-heading mb-1">Scrape Log</h3>
-              <span className="bg-brand-accent-soft text-brand-accent-strong rounded-full text-[0.75rem] font-bold px-[9px] py-1 text-center whitespace-nowrap self-start sm:self-auto">
+            <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 mb-3 mt-4">
+              <h3 className="text-xs font-bold text-brand-heading uppercase tracking-wider mb-0">Scrape Attempt Log</h3>
+              <span className="bg-brand-lime text-brand-black rounded-full text-[0.68rem] font-black px-2 py-0.5 shadow-2xs self-start sm:self-auto">
                 {attempts.length} attempt{attempts.length === 1 ? '' : 's'}
               </span>
             </div>
@@ -632,7 +686,7 @@ export function TrackPage() {
                 The first manual or scheduled scrape will appear here.
               </EmptyState>
             ) : (
-              <div className="border border-brand-border rounded-[10px] overflow-x-auto bg-brand-surface">
+              <div className="border border-brand-border rounded-lg overflow-x-auto bg-brand-surface shadow-2xs">
                 <table className="w-full min-w-[500px] border-collapse text-left">
                   <caption className="sr-only">Complete scrape log</caption>
                   <thead>
@@ -648,7 +702,7 @@ export function TrackPage() {
                   </thead>
                   <tbody>
                     {attempts.map((attempt) => (
-                      <tr key={attempt.id}>
+                      <tr key={attempt.id} className="hover:bg-brand-surface-subtle/50 transition-colors">
                         <td className={TD_CLASS}>{formatTimestamp(attempt.scraped_at)}</td>
                         <td className={TD_CLASS}>{attempt.attempt_number}</td>
                         <td className={TD_CLASS}>
@@ -656,10 +710,10 @@ export function TrackPage() {
                             {outcomeLabel(attempt.outcome)}
                           </span>
                         </td>
-                        <td className={TD_CLASS}>{formatPrice(attempt.price)}</td>
+                        <td className={`${TD_CLASS} font-bold text-brand-heading`}>{formatPrice(attempt.price)}</td>
                         <td className={TD_CLASS}>{formatStock(attempt.stock)}</td>
                         <td className={TD_CLASS}>{formatDuration(attempt.duration_ms)}</td>
-                        <td className={`${TD_CLASS} text-brand-muted min-w-[250px]`}>
+                        <td className={`${TD_CLASS} text-brand-muted min-w-[200px]`}>
                           {attempt.error_code
                             ? `${attempt.error_code}: ${attempt.error_message}`
                             : 'Validated quote'}

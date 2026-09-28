@@ -3,18 +3,24 @@ import { SearchOverlay } from './SearchOverlay'
 export function ProductSearch({ onSelectProduct }) {
   return (
     <section
-      className="border border-brand-border rounded-2xl bg-brand-surface shadow-[0_2px_8px_rgb(25_39_52/0.04)] grid gap-6 grid-cols-1 md:grid-cols-[minmax(0,1fr)_minmax(320px,0.9fr)] items-stretch md:items-start p-5 sm:p-7 relative overflow-visible"
+      id="catalog-search"
+      className="border border-brand-border rounded-xl bg-brand-surface card-elevation grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(340px,1.2fr)] items-start p-4 sm:p-5 relative overflow-visible transition-all"
       aria-labelledby="search-heading"
     >
       <div>
-        <h2 id="search-heading" className="text-xl font-bold tracking-[-0.02em] mb-1.5 text-brand-heading">
-          Find a product
+        <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-brand-lime-soft text-brand-dark text-[0.68rem] font-bold tracking-wider uppercase mb-1.5">
+          <span className="w-1.5 h-1.5 rounded-full bg-brand-dark" />
+          Catalog Explorer
+        </div>
+        <h2 id="search-heading" className="text-base sm:text-lg font-bold tracking-tight text-brand-heading mb-1">
+          Find &amp; Track a Product
         </h2>
-        <p className="text-brand-muted mt-0 text-sm sm:text-base">
-          Search by a full or partial product name.
+        <p className="text-brand-muted text-xs leading-relaxed m-0">
+          Search the live INE store catalog by product title, brand, or keyword to monitor price shifts and stock status.
         </p>
       </div>
       <SearchOverlay onSelectProduct={onSelectProduct} />
     </section>
   )
 }
+

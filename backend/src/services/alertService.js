@@ -13,7 +13,6 @@ function hashManifest(manifest) {
     let hash = 2166136261;
     for (let i = 0; i < stable.length; i += 1) {
       hash ^= stable.charCodeAt(i);
-      // eslint-disable-next-line no-bitwise
       hash = (hash * 16777619) >>> 0;
     }
     return hash.toString(16).padStart(8, '0');
@@ -79,8 +78,8 @@ export async function detectAndRecordLayoutChange(trackedProduct, manifest, { lo
  * price/stock and creates in-app alerts for price drops and stock changes.
  */
 export async function generatePriceAndStockAlerts(trackedProduct, newQuote, { log = logger } = {}) {
-  const prevPrice = trackedProduct.last_price != null ? Number(trackedProduct.last_price) : null;
-  const prevStock = trackedProduct.last_stock != null ? Number(trackedProduct.last_stock) : null;
+  const prevPrice = trackedProduct.last_price !== null && trackedProduct.last_price !== undefined ? Number(trackedProduct.last_price) : null;
+  const prevStock = trackedProduct.last_stock !== null && trackedProduct.last_stock !== undefined ? Number(trackedProduct.last_stock) : null;
 
   const { price: newPrice, stock: newStock } = newQuote;
 

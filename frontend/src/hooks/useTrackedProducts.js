@@ -44,7 +44,9 @@ export function useTrackedProducts() {
     }
   }, [])
 
+  // oxlint-disable-next-line react/set-state-in-effect -- intentional async data fetch
   useEffect(() => {
+    // oxlint-disable-next-line react/set-state-in-effect
     loadTrackedProducts()
 
     const refreshWhenVisible = () => {

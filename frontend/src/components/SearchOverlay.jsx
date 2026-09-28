@@ -118,7 +118,7 @@ export function SearchOverlay({ onSelectProduct }) {
         </label>
         <div className="relative flex-1 flex items-center">
           <svg
-            className="left-3 pointer-events-none absolute h-4 w-4 text-brand-muted"
+            className="left-3.5 pointer-events-none absolute h-4 w-4 text-brand-muted"
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"
@@ -147,12 +147,12 @@ export function SearchOverlay({ onSelectProduct }) {
             aria-autocomplete="list"
             aria-controls="search-dropdown-menu"
             aria-expanded={isOpen}
-            className="w-full bg-brand-input border border-brand-border-strong rounded-[9px] text-brand-text pl-9 pr-9 py-[11px] text-sm focus:outline-3 focus:outline-brand-focus focus:outline-offset-2 appearance-none"
+            className="w-full bg-brand-input border border-brand-border rounded-lg text-brand-text pl-9 pr-8 py-2 text-xs sm:text-sm focus:outline-none focus:border-brand-heading focus:ring-2 focus:ring-brand-focus appearance-none shadow-2xs transition-all"
           />
           {query && (
             <button
               type="button"
-              className="bg-transparent border-0 text-brand-muted cursor-pointer text-[0.85rem] px-1.5 py-1 absolute right-2 hover:text-brand-text focus-visible:outline-3 focus-visible:outline-brand-focus focus-visible:outline-offset-2 rounded"
+              className="bg-transparent border-0 text-brand-muted cursor-pointer text-xs px-2 py-1 absolute right-2 hover:text-brand-heading rounded transition-colors"
               onClick={() => {
                 setQuery('')
                 setIsOpen(false)
@@ -160,16 +160,26 @@ export function SearchOverlay({ onSelectProduct }) {
               }}
               aria-label="Clear search input"
             >
-              ✕
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
             </button>
           )}
         </div>
         <button
           type="submit"
-          className="shrink-0 bg-brand-accent hover:not-disabled:bg-brand-accent-strong border border-brand-accent hover:not-disabled:border-brand-accent-strong rounded-[9px] text-white font-bold px-4 py-[11px] cursor-pointer transition-colors disabled:opacity-55 disabled:cursor-not-allowed text-sm focus-visible:outline-3 focus-visible:outline-brand-focus focus-visible:outline-offset-2"
+          className="shrink-0 bg-brand-lime hover:bg-brand-lime-hover border border-brand-lime text-brand-black font-bold rounded-lg px-4 py-2 cursor-pointer transition-all disabled:opacity-50 disabled:cursor-not-allowed text-xs shadow-2xs active:scale-98 flex items-center gap-1.5"
           disabled={searchState.status === 'loading' || !query.trim()}
         >
-          {searchState.status === 'loading' ? 'Searching…' : 'Search'}
+          {searchState.status === 'loading' ? (
+            <span className="flex items-center gap-1.5">
+              <span className="w-3 h-3 rounded-full border-2 border-brand-black border-t-transparent animate-spin inline-block" />
+              Searching…
+            </span>
+          ) : (
+            'Search'
+          )}
         </button>
       </form>
 
@@ -177,24 +187,24 @@ export function SearchOverlay({ onSelectProduct }) {
       {isOpen && (
         <div
           id="search-dropdown-menu"
-          className="bg-brand-surface border border-brand-border-strong rounded-xl shadow-[0_8px_32px_rgb(25_39_52/0.12)] left-0 max-h-[380px] overflow-y-auto absolute right-0 top-[calc(100%+6px)] z-50"
+          className="bg-brand-surface border border-brand-border rounded-xl shadow-xl left-0 max-h-[360px] overflow-y-auto absolute right-0 top-[calc(100%+6px)] z-50 animate-in fade-in zoom-in-95 duration-150"
           role="region"
           aria-label="Search suggestions"
         >
           {searchState.status === 'loading' && (
-            <div className="flex flex-row items-center justify-start gap-2.5 px-5 py-4 text-brand-muted text-sm">
-              <span className="w-3.5 h-3.5 rounded-full border-2 border-brand-border-strong border-t-brand-accent animate-spin inline-block shrink-0" aria-hidden="true" />
-              <span>Searching INE store catalog for "{query.trim()}"…</span>
+            <div className="flex flex-row items-center justify-start gap-2.5 px-4 py-4 text-brand-muted text-xs bg-brand-surface-subtle">
+              <span className="w-3.5 h-3.5 rounded-full border-2 border-brand-border-strong border-t-brand-dark animate-spin inline-block shrink-0" aria-hidden="true" />
+              <span>Searching catalog for "{query.trim()}"…</span>
             </div>
           )}
 
           {searchState.status === 'error' && (
-            <div className="flex flex-col items-center gap-2.5 px-5 py-7 text-center text-brand-error text-sm">
+            <div className="flex flex-col items-center gap-2 px-5 py-6 text-center text-brand-error text-xs">
               <p className="font-bold m-0 mb-1">Search request failed</p>
-              <p className="text-[0.85rem] m-0 mb-3">{searchState.error}</p>
+              <p className="text-xs m-0 mb-2.5 text-brand-muted">{searchState.error}</p>
               <button
                 type="button"
-                className="bg-brand-surface border border-brand-border-strong text-brand-accent-strong font-semibold rounded-[9px] px-3 py-1.5 text-[0.82rem] cursor-pointer hover:not-disabled:bg-brand-accent-soft hover:not-disabled:border-brand-accent transition-colors disabled:opacity-55 disabled:cursor-not-allowed focus-visible:outline-3 focus-visible:outline-brand-focus focus-visible:outline-offset-2"
+                className="bg-brand-surface border border-brand-border-strong text-brand-heading font-semibold rounded-lg px-3 py-1.5 text-xs cursor-pointer hover:bg-brand-surface-subtle transition-colors shadow-2xs"
                 onClick={() => performSearch(query, page)}
               >
                 Retry search
@@ -203,34 +213,44 @@ export function SearchOverlay({ onSelectProduct }) {
           )}
 
           {searchState.status === 'success' && products.length === 0 && (
-            <div className="flex flex-col items-center gap-2.5 px-5 py-7 text-center text-brand-muted text-sm">
-              <p className="font-bold m-0 mb-1 text-brand-heading">No products found for "{query.trim()}"</p>
-              <p className="m-0 text-[0.85rem]">Try a broader product keyword or check the spelling.</p>
+            <div className="flex flex-col items-center gap-1.5 px-5 py-7 text-center text-brand-muted text-xs">
+              <div className="w-8 h-8 rounded-full bg-brand-subtle flex items-center justify-center text-brand-muted mb-1">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <circle cx="11" cy="11" r="6" />
+                  <path d="m16 16 4 4" />
+                </svg>
+              </div>
+              <p className="font-bold m-0 text-brand-heading text-xs">No products found for "{query.trim()}"</p>
+              <p className="m-0 text-[0.72rem] text-brand-muted">Try checking spelling or using a broader product term.</p>
             </div>
           )}
 
           {searchState.status === 'success' && products.length > 0 && (
-            <div className="py-1">
-              <div className="flex items-center justify-between text-xs text-brand-muted px-4 pt-2.5 pb-2">
+            <div className="py-1.5">
+              <div className="flex items-center justify-between text-[0.72rem] text-brand-muted px-4 pt-1.5 pb-2 border-b border-brand-border bg-brand-surface-subtle font-medium">
                 <span>{total} matching product{total === 1 ? '' : 's'}</span>
                 {totalPages > 1 && (
-                  <span className="text-[0.78rem]">Page {page} of {totalPages}</span>
+                  <span className="text-[0.72rem] text-brand-heading font-semibold">Page {page} of {totalPages}</span>
                 )}
               </div>
 
-              <ul className="list-none m-0 p-0 px-2 pb-2 flex flex-col gap-1" role="listbox">
+              <ul className="list-none m-0 p-0 px-1.5 py-1.5 flex flex-col gap-1" role="listbox">
                 {products.map((product) => (
                   <li key={product.productId} role="option" aria-selected="false">
                     <button
                       type="button"
-                      className="w-full flex items-center justify-between gap-3 text-left p-2.5 sm:px-3 sm:py-2.5 rounded-[9px] border border-transparent cursor-pointer transition-colors hover:bg-brand-accent-soft hover:border-brand-accent-light text-brand-text bg-transparent font-normal focus-visible:outline-3 focus-visible:outline-brand-focus focus-visible:outline-offset-2"
+                      className="w-full flex items-center justify-between gap-2.5 text-left p-2.5 rounded-lg border border-transparent cursor-pointer transition-all hover:bg-brand-surface-subtle hover:border-brand-border text-brand-text bg-transparent font-normal group active:scale-[0.99]"
                       onClick={() => handleSelect(product)}
                     >
                       <div className="flex flex-col gap-0.5 min-w-0">
-                        <span className="text-brand-heading font-semibold text-[0.9rem] truncate">{product.name}</span>
-                        <span className="text-brand-muted text-[0.8rem]">{formatProductMeta(product)}</span>
+                        <span className="text-brand-heading font-bold text-xs sm:text-sm truncate group-hover:text-brand-black">
+                          {product.name}
+                        </span>
+                        <span className="text-brand-muted text-[0.72rem] font-medium">
+                          {formatProductMeta(product)}
+                        </span>
                       </div>
-                      <span className="text-brand-accent-strong text-[0.82rem] font-semibold shrink-0" aria-hidden="true">
+                      <span className="bg-brand-lime-soft text-brand-dark group-hover:bg-brand-lime group-hover:text-brand-black transition-colors rounded-full text-[0.68rem] font-bold px-2.5 py-1 shrink-0 flex items-center gap-1 shadow-2xs" aria-hidden="true">
                         Select →
                       </span>
                     </button>
@@ -239,19 +259,19 @@ export function SearchOverlay({ onSelectProduct }) {
               </ul>
 
               {totalPages > 1 && (
-                <div className="flex items-center justify-center gap-2.5 border-t border-brand-border mt-1 px-4 py-2.5">
+                <div className="flex items-center justify-between gap-2 border-t border-brand-border mt-1 px-4 py-2 bg-brand-surface-subtle">
                   <button
                     type="button"
-                    className="bg-brand-surface border border-brand-border-strong text-brand-accent-strong font-semibold rounded-[9px] px-3 py-1.5 text-[0.82rem] cursor-pointer hover:not-disabled:bg-brand-accent-soft hover:not-disabled:border-brand-accent transition-colors disabled:opacity-55 disabled:cursor-not-allowed focus-visible:outline-3 focus-visible:outline-brand-focus focus-visible:outline-offset-2"
+                    className="bg-brand-surface border border-brand-border text-brand-heading font-bold rounded-lg px-2.5 py-1 text-xs cursor-pointer hover:bg-brand-surface-subtle transition-colors disabled:opacity-40 disabled:cursor-not-allowed shadow-2xs"
                     disabled={page <= 1 || searchState.status === 'loading'}
                     onClick={() => performSearch(query, page - 1)}
                   >
                     ← Prev
                   </button>
-                  <span className="text-brand-muted text-[0.82rem] font-bold">{page} / {totalPages}</span>
+                  <span className="text-brand-muted text-[0.72rem] font-semibold">{page} / {totalPages}</span>
                   <button
                     type="button"
-                    className="bg-brand-surface border border-brand-border-strong text-brand-accent-strong font-semibold rounded-[9px] px-3 py-1.5 text-[0.82rem] cursor-pointer hover:not-disabled:bg-brand-accent-soft hover:not-disabled:border-brand-accent transition-colors disabled:opacity-55 disabled:cursor-not-allowed focus-visible:outline-3 focus-visible:outline-brand-focus focus-visible:outline-offset-2"
+                    className="bg-brand-surface border border-brand-border text-brand-heading font-bold rounded-lg px-2.5 py-1 text-xs cursor-pointer hover:bg-brand-surface-subtle transition-colors disabled:opacity-40 disabled:cursor-not-allowed shadow-2xs"
                     disabled={page >= totalPages || searchState.status === 'loading'}
                     onClick={() => performSearch(query, page + 1)}
                   >

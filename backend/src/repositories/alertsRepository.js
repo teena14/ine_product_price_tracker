@@ -21,8 +21,8 @@ export async function createAlert({ trackedProductId, alertType, message, oldVal
       tracked_product_id: trackedProductId,
       alert_type: alertType,
       message,
-      old_value: oldValue != null ? String(oldValue) : null,
-      new_value: newValue != null ? String(newValue) : null,
+      old_value: oldValue !== null && oldValue !== undefined ? String(oldValue) : null,
+      new_value: newValue !== null && newValue !== undefined ? String(newValue) : null,
     })
     .select()
     .single();
